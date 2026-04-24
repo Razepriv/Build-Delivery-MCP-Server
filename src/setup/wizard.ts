@@ -82,7 +82,11 @@ async function main() {
           sessionPath: `./.wwebjs_auth/${profileName}`,
           recipients: whatsappRecipients,
         }
-      : { enabled: false };
+      : {
+          enabled: false,
+          sessionPath: `./.wwebjs_auth/${profileName}`,
+          recipients: [],
+        };
 
     const watchDir = await ask(rl, "Watch directory for builds", "./builds");
     const pattern = await ask(

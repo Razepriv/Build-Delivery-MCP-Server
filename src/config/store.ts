@@ -1,6 +1,11 @@
 import fs from "fs-extra";
 import path from "node:path";
-import { RootConfigSchema, type ParsedRootConfig, type ParsedProfileConfig } from "./schema.js";
+import {
+  RootConfigSchema,
+  ProfileConfigSchema,
+  type ParsedRootConfig,
+  type ParsedProfileConfig,
+} from "./schema.js";
 import type { ProfileConfig, RootConfig } from "../types.js";
 
 const DEFAULT_CONFIG_PATH = process.env.CONFIG_PATH ?? "./config.json";

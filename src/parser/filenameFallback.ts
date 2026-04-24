@@ -2,7 +2,7 @@ import path from "node:path";
 import type { BuildMetadata, BuildType } from "../types.js";
 import { fileSizeBytes } from "../utils/fs.js";
 
-const VERSION_PATTERN = /v?(\d+\.\d+(?:\.\d+)?(?:[-_.][\w-]+)?)/i;
+const VERSION_PATTERN = /v?(\d+\.\d+(?:\.\d+)?(?:-[A-Za-z0-9.]+)?)/;
 const BUILD_TYPE_HINTS: Record<string, BuildType> = {
   release: "release",
   debug: "debug",
@@ -31,7 +31,8 @@ function guessAppName(filename: string): string {
 
 export async function filenameFallback(filePath: string): Promise<BuildMetadata> {
   const filename = path.basename(filePath);
-  const versionMatch = filename.match(VERSION_PATTERN);
+  const stem = path.basename(filePath, path.extname(filePath));
+  const versionMatch = stem.match(VERSION_PATTERN);
 
   return {
     filePath,
