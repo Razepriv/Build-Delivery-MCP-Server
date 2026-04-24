@@ -1,0 +1,60 @@
+{
+  "name": "build-delivery-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that watches mobile build directories, extracts APK/AAB metadata, renames via template, and delivers to Telegram + WhatsApp in under 5 seconds.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "build-delivery-mcp": "dist/index.js",
+    "build-delivery-setup": "dist/setup/wizard.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "setup": "tsx src/setup/wizard.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "android",
+    "apk",
+    "aab",
+    "ci-cd",
+    "telegram",
+    "whatsapp",
+    "build-delivery",
+    "mobile"
+  ],
+  "author": "Razeen Shaheed / Webverse Arena",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0",
+    "qrcode-terminal": "^0.12.0",
+    "telegraf": "^4.16.3",
+    "whatsapp-web.js": "^1.23.0",
+    "winston": "^3.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.12.0",
+    "@types/qrcode-terminal": "^0.12.2",
+    "@vitest/coverage-v8": "^1.6.0",
+    "rimraf": "^5.0.5",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

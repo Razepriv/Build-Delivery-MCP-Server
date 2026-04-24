@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Config & secrets
+.env
+.env.local
+config.json
+
+# WhatsApp session (contains auth tokens — CRITICAL)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Staging directory for renamed builds
+.staging/
+
+# Build history persistence
+.history/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Test artifacts
+tests/fixtures/tmp/
