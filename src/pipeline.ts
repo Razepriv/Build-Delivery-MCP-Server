@@ -1,0 +1,99 @@
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import type {
+  BuildHistoryEntry,
+  ChannelName,
+  DeliveryResult,
+  ProfileConfig,
+  SendBuildOptions,
+} from "./types.js";
+import { ConfigStore } from "./config/store.js";
+import { parseBuildFile } from "./parser/index.js";
+import { renameToStaging } from "./renamer/index.js";
+import { DeliveryRouter } from "./delivery/router.js";
+import { BuildHistory } from "./history/buildHistory.js";
+import { logger } from "./utils/logger.js";
+import { safeRemove, bytesToMB } from "./utils/fs.js";
+
+export interface PipelineOutcome {
+  readonly entry: BuildHistoryEntry;
+  readonly results: readonly DeliveryResult[];
+  readonly stagedFilename: string;
+  readonly totalMs: number;
+}
+
+export class DeliveryPipeline {
+  private readonly routers = new Map<string, DeliveryRouter>();
+
+  constructor(
+    private readonly config: ConfigStore,
+    private readonly history: BuildHistory,
+  ) {}
+
+  private getRouter(profileName: string, profile: ProfileConfig): DeliveryRouter {
+    const existing = this.routers.get(profileName);
+    if (existing) return existing;
+    const router = new DeliveryRouter({ profile, profileName });
+    this.routers.set(profileName, router);
+    return router;
+  }
+
+  async process(options: SendBuildOptions): Promise<PipelineOutcome> {
+    const start = Date.now();
+    const { name: profileName, profile } = this.config.resolveProfile(options.profile);
+    const absolutePath = path.resolve(options.filePath);
+
+    logger.info(`[${profileName}] Processing ${absolutePath}`);
+    let meta = await parseBuildFile(absolutePath);
+    if (options.appName) meta = { ...meta, appName: options.appName };
+    if (options.version) meta = { ...meta, versionName: options.version };
+
+    const sizeMB = bytesToMB(meta.fileSize);
+    logger.info(
+      `[${profileName}] ${meta.appName} v${meta.versionName} (${meta.buildType}) ${sizeMB} MB · source=${meta.source}`,
+    );
+
+    const { stagedPath, stagedFilename } = await renameToStaging(
+      meta,
+      profile.naming.pattern,
+    );
+
+    const router = this.getRouter(profileName, profile);
+    const targets: ChannelName[] | undefined = options.channels
+      ? [...options.channels]
+      : undefined;
+
+    const results = await router.deliverBuild(stagedPath, meta, {
+      channels: targets,
+      customMessage: options.customMessage,
+    });
+
+    await safeRemove(stagedPath);
+
+    const entry: BuildHistoryEntry = {
+      id: randomUUID(),
+      timestamp: Date.now(),
+      profile: profileName,
+      originalPath: absolutePath,
+      renamedFilename: stagedFilename,
+      metadata: meta,
+      results,
+    };
+    this.history.append(entry);
+
+    const totalMs = Date.now() - start;
+    const successCount = results.filter((r) => r.success).length;
+    logger.info(
+      `[${profileName}] Delivered ${successCount}/${results.length} recipients in ${totalMs}ms`,
+    );
+
+    return { entry, results, stagedFilename, totalMs };
+  }
+
+  async shutdown(): Promise<void> {
+    await Promise.allSettled(
+      Array.from(this.routers.values()).map((r) => r.shutdown()),
+    );
+    this.routers.clear();
+  }
+}
