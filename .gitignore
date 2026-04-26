@@ -25,6 +25,9 @@ npm-debug.log*
 # Build history persistence
 .history/
 
+# Install-tracking event log (Phase 3 — contains recipient IDs)
+.tracking/
+
 # OS
 .DS_Store
 Thumbs.db

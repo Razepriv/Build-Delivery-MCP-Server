@@ -124,3 +124,52 @@ export const SetWatchDirectorySchema = z.object({
   directory: z.string().min(1),
   profile: z.string().optional(),
 });
+
+// ─── Phase 3 — Distribution Intelligence ───────────────────────────
+
+export const SetIntelSettingsSchema = z.object({
+  profile: z.string().optional(),
+  changelog: z
+    .object({
+      enabled: z.boolean().optional(),
+      repoPath: z.string().optional(),
+      maxCommits: z.number().int().positive().max(500).optional(),
+      includeTypes: z.array(z.string().min(1)).optional(),
+    })
+    .optional(),
+  crashlytics: z
+    .object({
+      enabled: z.boolean().optional(),
+      source: z.enum(["file", "http"]).optional(),
+      path: z.string().optional(),
+      authHeader: z.string().optional(),
+    })
+    .optional(),
+  tracking: z
+    .object({
+      enabled: z.boolean().optional(),
+      baseUrl: z.string().url().optional(),
+      port: z.number().int().positive().max(65535).optional(),
+      perRecipient: z.boolean().optional(),
+      tokenTtlHours: z.number().int().positive().optional(),
+      eventLogPath: z.string().optional(),
+    })
+    .optional(),
+});
+
+export const StartInstallServerSchema = z.object({
+  profile: z.string().optional(),
+});
+
+export const StopInstallServerSchema = z.object({});
+
+export const GetInstallEventsSchema = z.object({
+  limit: z.number().int().positive().max(500).optional(),
+});
+
+export const GenerateChangelogSchema = z.object({
+  profile: z.string().optional(),
+  fromRef: z.string().optional(),
+  toRef: z.string().optional(),
+  maxCommits: z.number().int().positive().max(500).optional(),
+});

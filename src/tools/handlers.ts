@@ -6,6 +6,9 @@ import type { BuildHistory } from "../history/buildHistory.js";
 import type { BuildWatcher } from "../watcher/fileWatcher.js";
 import type { ChannelName } from "../types.js";
 import { DeliveryRouter } from "../delivery/router.js";
+import { generateChangelog } from "../intel/changelog.js";
+import type { InstallServer } from "../install-tracking/server.js";
+import type { TokenStore } from "../install-tracking/tokenStore.js";
 import {
   ConfigureChannelSchema,
   SendBuildSchema,
@@ -16,6 +19,11 @@ import {
   SendNotificationSchema,
   UpdateNamingPatternSchema,
   SetWatchDirectorySchema,
+  SetIntelSettingsSchema,
+  StartInstallServerSchema,
+  StopInstallServerSchema,
+  GetInstallEventsSchema,
+  GenerateChangelogSchema,
 } from "./schemas.js";
 import { truncateSecret } from "../utils/logger.js";
 
@@ -44,6 +52,19 @@ export interface HandlerContext {
   readonly pipeline: DeliveryPipeline;
   readonly history: BuildHistory;
   readonly watcher: BuildWatcher;
+  readonly tracking: TrackingContext;
+}
+
+/**
+ * Live install-tracking surface, owned by the MCP server. Handlers may
+ * mutate `installServer` / `tokenStore` (start_install_server creates
+ * them; stop tears them down).
+ */
+export interface TrackingContext {
+  installServer: InstallServer | null;
+  tokenStore: TokenStore | null;
+  /** Called with non-null when tracking starts; null when it stops. */
+  onChange?: (store: TokenStore | null) => void;
 }
 
 export async function handleConfigureChannel(
@@ -356,4 +377,129 @@ export async function handleSetWatchDirectory(
     profile: name,
     watching: profile.watcher.directories,
   });
+}
+
+// ─── Phase 3 — Distribution Intelligence ───────────────────────────
+
+export async function handleSetIntelSettings(
+  args: unknown,
+  ctx: HandlerContext,
+): Promise<CallToolResult> {
+  const parsed = SetIntelSettingsSchema.safeParse(args);
+  if (!parsed.success) return validationError(parsed.error);
+  const { name } = ctx.config.resolveProfile(parsed.data.profile);
+
+  const intelPatch: Record<string, unknown> = {};
+  if (parsed.data.changelog) intelPatch.changelog = parsed.data.changelog;
+  if (parsed.data.crashlytics) intelPatch.crashlytics = parsed.data.crashlytics;
+  if (parsed.data.tracking) intelPatch.tracking = parsed.data.tracking;
+
+  // The store's deep-merge in upsertProfile spreads each sub-key onto the
+  // current value, so a partial intel patch is safe at runtime. The static
+  // signature wants a complete shape — this cast bridges that gap.
+  await ctx.config.upsertProfile(name, {
+    intel: intelPatch as never,
+  });
+  const { profile } = ctx.config.resolveProfile(name);
+  return successResult({
+    profile: name,
+    intel: profile.intel,
+  });
+}
+
+export async function handleStartInstallServer(
+  args: unknown,
+  ctx: HandlerContext,
+): Promise<CallToolResult> {
+  const parsed = StartInstallServerSchema.safeParse(args);
+  if (!parsed.success) return validationError(parsed.error);
+  const { name, profile } = ctx.config.resolveProfile(parsed.data.profile);
+
+  if (!profile.intel.tracking.enabled) {
+    return errorResult(
+      `Install tracking is disabled on profile "${name}". Enable it with set_intel_settings first.`,
+    );
+  }
+
+  const { TokenStore } = await import("../install-tracking/tokenStore.js");
+  const { InstallServer } = await import("../install-tracking/server.js");
+
+  if (ctx.tracking.installServer?.isRunning()) {
+    return successResult({ ok: true, alreadyRunning: true, profile: name });
+  }
+
+  const store = new TokenStore(profile.intel.tracking.eventLogPath ?? "./.tracking/events.jsonl");
+  await store.init();
+  const server = new InstallServer({
+    port: profile.intel.tracking.port ?? 7331,
+    store,
+  });
+  const addr = await server.start();
+  ctx.tracking.installServer = server;
+  ctx.tracking.tokenStore = store;
+  ctx.tracking.onChange?.(store);
+
+  return successResult({
+    ok: true,
+    profile: name,
+    listening: addr,
+    baseUrl: profile.intel.tracking.baseUrl ?? `http://localhost:${addr.port}`,
+  });
+}
+
+export async function handleStopInstallServer(
+  args: unknown,
+  ctx: HandlerContext,
+): Promise<CallToolResult> {
+  const parsed = StopInstallServerSchema.safeParse(args);
+  if (!parsed.success) return validationError(parsed.error);
+  if (!ctx.tracking.installServer) {
+    return successResult({ ok: true, alreadyStopped: true });
+  }
+  await ctx.tracking.installServer.stop();
+  ctx.tracking.installServer = null;
+  ctx.tracking.tokenStore = null;
+  ctx.tracking.onChange?.(null);
+  return successResult({ ok: true });
+}
+
+export async function handleGetInstallEvents(
+  args: unknown,
+  ctx: HandlerContext,
+): Promise<CallToolResult> {
+  const parsed = GetInstallEventsSchema.safeParse(args);
+  if (!parsed.success) return validationError(parsed.error);
+  if (!ctx.tracking.tokenStore) {
+    return successResult({ count: 0, events: [], note: "Tracker is not running." });
+  }
+  const limit = parsed.data.limit ?? 50;
+  const events = await ctx.tracking.tokenStore.readEvents(limit);
+  return successResult({ count: events.length, events });
+}
+
+export async function handleGenerateChangelog(
+  args: unknown,
+  ctx: HandlerContext,
+): Promise<CallToolResult> {
+  const parsed = GenerateChangelogSchema.safeParse(args);
+  if (!parsed.success) return validationError(parsed.error);
+  const { name, profile } = ctx.config.resolveProfile(parsed.data.profile);
+  // Force-enable changelog generation for this on-demand call so operators
+  // can preview the output without persisting changelog.enabled = true.
+  const changelog = await generateChangelog(
+    { ...profile.intel.changelog, enabled: true },
+    {
+      fromRef: parsed.data.fromRef,
+      toRef: parsed.data.toRef,
+      maxCommits: parsed.data.maxCommits,
+    },
+  );
+  if (!changelog) {
+    return successResult({
+      profile: name,
+      changelog: null,
+      note: "No changelog available — repo missing, no tags found, or no commits in range.",
+    });
+  }
+  return successResult({ profile: name, changelog });
 }

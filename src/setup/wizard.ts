@@ -144,6 +144,76 @@ async function configureTeams(rl: readline.Interface) {
   return { enabled: true, webhooks } as const;
 }
 
+async function configureIntel(rl: readline.Interface) {
+  output.write("\n─── Distribution Intelligence (optional) ───\n");
+
+  const changelogEnabled = await askYesNo(
+    rl,
+    "Enable changelog generation from git tags?",
+    false,
+  );
+  const changelog = changelogEnabled
+    ? {
+        enabled: true,
+        repoPath: await ask(rl, "  Path to the git repo", process.cwd()),
+      }
+    : { enabled: false };
+
+  const crashEnabled = await askYesNo(
+    rl,
+    "Enable Crashlytics correlation? (requires JSON file or HTTP endpoint)",
+    false,
+  );
+  const crashlytics = crashEnabled
+    ? await (async () => {
+        const source = await askChoice(
+          rl,
+          "  Stats source",
+          ["file", "http"] as const,
+          "file",
+        );
+        const path = await ask(
+          rl,
+          source === "file"
+            ? "  Path to crash-stats JSON"
+            : "  Crash-stats HTTP endpoint URL",
+          "",
+        );
+        const authHeader =
+          source === "http"
+            ? await ask(rl, "  Authorization header (optional)", "")
+            : "";
+        return {
+          enabled: true,
+          source,
+          path,
+          authHeader: authHeader || undefined,
+        };
+      })()
+    : { enabled: false };
+
+  const trackingEnabled = await askYesNo(
+    rl,
+    "Enable install tracking (local HTTP server with unique links)?",
+    false,
+  );
+  const tracking = trackingEnabled
+    ? {
+        enabled: true,
+        port: Number(await ask(rl, "  Tracking server port", "7331")),
+        baseUrl: (await ask(rl, "  Public base URL", "http://localhost:7331")) || undefined,
+        perRecipient: await askYesNo(
+          rl,
+          "  Issue one token per recipient (so you can see who installed)?",
+          false,
+        ),
+        tokenTtlHours: Number(await ask(rl, "  Token TTL (hours)", "168")),
+      }
+    : { enabled: false };
+
+  return { changelog, crashlytics, tracking };
+}
+
 async function main() {
   const rl = readline.createInterface({ input, output });
 
@@ -164,6 +234,7 @@ async function main() {
     const discord = await configureDiscord(rl);
     const email = await configureEmail(rl);
     const teams = await configureTeams(rl);
+    const intel = await configureIntel(rl);
 
     const watchDir = await ask(rl, "Watch directory for builds", "./builds");
     const pattern = await ask(
@@ -202,6 +273,7 @@ async function main() {
         discordMaxMB,
         emailMaxMB,
       },
+      intel: intel as never,
     });
 
     if (await askYesNo(rl, `Set "${profileName}" as the default profile?`, true)) {

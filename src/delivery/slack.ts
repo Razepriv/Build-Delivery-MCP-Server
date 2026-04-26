@@ -9,6 +9,8 @@ import type {
 } from "../types.js";
 import { slackCaption } from "./captions.js";
 import { filterByTags } from "./tags.js";
+import { intelForRecipient } from "./intelHelper.js";
+import type { DeliveryIntel } from "../intel/orchestrator.js";
 import { logger } from "../utils/logger.js";
 import { bytesToMB } from "../utils/fs.js";
 
@@ -57,6 +59,7 @@ export class SlackService {
     meta: BuildMetadata,
     customMessage?: string,
     tags?: readonly RecipientTag[],
+    intel?: DeliveryIntel,
   ): Promise<DeliveryResult[]> {
     if (!this.isReady()) {
       throw new Error("Slack service is not ready (missing token or channels).");
@@ -80,9 +83,55 @@ export class SlackService {
       }));
     }
 
-    const comment = slackCaption(meta, customMessage);
     const filename = path.basename(filePath);
     const fileBuffer = await fs.readFile(filePath);
+
+    // When per-recipient install URLs are in play, each channel needs a
+    // distinct comment, so we loop. Otherwise we use the more efficient
+    // multi-channel batch upload.
+    const perRecipient = Boolean(intel?.installUrlFor);
+    if (perRecipient) {
+      return Promise.all(
+        targets.map(async (t) => {
+          const start = Date.now();
+          try {
+            const comment = slackCaption(
+              meta,
+              customMessage,
+              intelForRecipient(intel, "slack", t.id),
+            );
+            const response = await this.webClient().filesUploadV2({
+              channel_id: t.id,
+              file: fileBuffer,
+              filename,
+              title: `${meta.appName} v${meta.versionName}`,
+              initial_comment: comment,
+            });
+            const fileId =
+              Array.isArray(response.files) && response.files.length > 0
+                ? (response.files[0] as { id?: string }).id
+                : undefined;
+            return {
+              channel: "slack" as const,
+              recipient: t.id,
+              success: true,
+              messageId: fileId,
+              durationMs: Date.now() - start,
+            };
+          } catch (err) {
+            return {
+              channel: "slack" as const,
+              recipient: t.id,
+              success: false,
+              error: this.errorMessage(err),
+              durationMs: Date.now() - start,
+            };
+          }
+        }),
+      );
+    }
+
+    const comment = slackCaption(meta, customMessage, intelForRecipient(intel, "slack", targets[0]!.id));
 
     const start = Date.now();
     try {

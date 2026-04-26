@@ -6,6 +6,8 @@ import type {
 } from "../types.js";
 import { teamsCard } from "./captions.js";
 import { filterByTags } from "./tags.js";
+import { intelForRecipient } from "./intelHelper.js";
+import type { DeliveryIntel } from "../intel/orchestrator.js";
 import { logger } from "../utils/logger.js";
 
 /**
@@ -55,6 +57,7 @@ export class TeamsService {
     meta: BuildMetadata,
     customMessage?: string,
     tags?: readonly RecipientTag[],
+    intel?: DeliveryIntel,
   ): Promise<DeliveryResult[]> {
     if (!this.isReady()) {
       throw new Error("Teams service is not ready.");
@@ -64,12 +67,16 @@ export class TeamsService {
     );
 
     const targets = filterByTags(this.config.webhooks ?? [], tags);
-    const card = teamsCard(meta, customMessage);
 
     return Promise.all(
       targets.map(async (t) => {
         const start = Date.now();
         try {
+          const card = teamsCard(
+            meta,
+            customMessage,
+            intelForRecipient(intel, "teams", t.id),
+          );
           const res = await fetch(t.id, {
             method: "POST",
             headers: { "content-type": "application/json" },

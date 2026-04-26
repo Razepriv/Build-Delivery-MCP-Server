@@ -11,6 +11,8 @@ import type {
 } from "../types.js";
 import { whatsappCaption } from "./captions.js";
 import { filterByTags } from "./tags.js";
+import { intelForRecipient } from "./intelHelper.js";
+import type { DeliveryIntel } from "../intel/orchestrator.js";
 import { logger } from "../utils/logger.js";
 import { bytesToMB } from "../utils/fs.js";
 
@@ -108,6 +110,7 @@ export class WhatsAppService {
     meta: BuildMetadata,
     customMessage?: string,
     tags?: readonly RecipientTag[],
+    intel?: DeliveryIntel,
   ): Promise<DeliveryResult[]> {
     const targets = this.recipientList(tags);
 
@@ -125,13 +128,17 @@ export class WhatsAppService {
     }
 
     await this.ensureClient();
-    const caption = whatsappCaption(meta, customMessage);
     const media = MessageMedia.fromFilePath(filePath);
 
     const results = await Promise.all(
       targets.map(async (r) => {
         const start = Date.now();
         try {
+          const caption = whatsappCaption(
+            meta,
+            customMessage,
+            intelForRecipient(intel, "whatsapp", r.id),
+          );
           const sent = await this.client!.sendMessage(r.id, media, { caption, sendMediaAsDocument: true });
           return {
             channel: "whatsapp" as const,

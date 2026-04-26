@@ -8,6 +8,8 @@ import type {
 } from "../types.js";
 import { discordCaption } from "./captions.js";
 import { filterByTags } from "./tags.js";
+import { intelForRecipient } from "./intelHelper.js";
+import type { DeliveryIntel } from "../intel/orchestrator.js";
 import { logger } from "../utils/logger.js";
 import { bytesToMB } from "../utils/fs.js";
 
@@ -53,6 +55,7 @@ export class DiscordService {
     meta: BuildMetadata,
     customMessage?: string,
     tags?: readonly RecipientTag[],
+    intel?: DeliveryIntel,
   ): Promise<DeliveryResult[]> {
     if (!this.isReady()) {
       throw new Error("Discord service is not ready (no webhooks configured).");
@@ -73,13 +76,17 @@ export class DiscordService {
       }));
     }
 
-    const content = discordCaption(meta, customMessage);
     const filename = path.basename(filePath);
 
     return Promise.all(
       targets.map(async (t) => {
         const start = Date.now();
         try {
+          const content = discordCaption(
+            meta,
+            customMessage,
+            intelForRecipient(intel, "discord", t.id),
+          );
           const fileBuffer = await fs.readFile(filePath);
           const form = new FormData();
           form.append(

@@ -86,6 +86,39 @@ export const LimitsConfigSchema = z.object({
   emailMaxMB: z.number().int().positive().default(25),
 });
 
+// ─── Phase 3 — Distribution Intelligence ───────────────────────────
+
+export const ChangelogConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  repoPath: z.string().optional(),
+  maxCommits: z.number().int().positive().max(500).default(50),
+  includeTypes: z
+    .array(z.string().min(1))
+    .default(["feat", "fix", "perf", "refactor"]),
+});
+
+export const CrashlyticsConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  source: z.enum(["file", "http"]).optional(),
+  path: z.string().optional(),
+  authHeader: z.string().optional(),
+});
+
+export const InstallTrackingConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  baseUrl: z.string().url().optional(),
+  port: z.number().int().positive().max(65535).default(7331),
+  perRecipient: z.boolean().default(false),
+  tokenTtlHours: z.number().int().positive().default(168), // 7 days
+  eventLogPath: z.string().default("./.tracking/events.jsonl"),
+});
+
+export const IntelConfigSchema = z.object({
+  changelog: ChangelogConfigSchema.default({}),
+  crashlytics: CrashlyticsConfigSchema.default({}),
+  tracking: InstallTrackingConfigSchema.default({}),
+});
+
 const ChannelEnumSchema = z.enum([
   "telegram",
   "whatsapp",
@@ -106,6 +139,7 @@ export const ProfileConfigSchema = z.object({
   watcher: WatcherConfigSchema.default({}),
   naming: NamingConfigSchema.default({}),
   limits: LimitsConfigSchema.default({}),
+  intel: IntelConfigSchema.default({}),
 });
 
 export const RootConfigSchema = z.object({

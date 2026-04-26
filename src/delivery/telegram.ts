@@ -7,7 +7,9 @@ import type {
   TelegramConfig,
 } from "../types.js";
 import { telegramCaption } from "./captions.js";
+import { intelForRecipient } from "./intelHelper.js";
 import { filterByTags, tagTelegramChats } from "./tags.js";
+import type { DeliveryIntel } from "../intel/orchestrator.js";
 import { logger } from "../utils/logger.js";
 import { bytesToMB } from "../utils/fs.js";
 
@@ -58,6 +60,7 @@ export class TelegramService {
     meta: BuildMetadata,
     customMessage?: string,
     tags?: readonly RecipientTag[],
+    intel?: DeliveryIntel,
   ): Promise<DeliveryResult[]> {
     if (!this.isReady()) {
       throw new Error("Telegram service is not ready (missing token or chat IDs).");
@@ -78,13 +81,17 @@ export class TelegramService {
       }));
     }
 
-    const caption = telegramCaption(meta, customMessage);
     const results: DeliveryResult[] = [];
 
     for (const { id: chatId } of targets) {
       const start = Date.now();
       try {
         const buffer = await fs.readFile(filePath);
+        const caption = telegramCaption(
+          meta,
+          customMessage,
+          intelForRecipient(intel, "telegram", chatId),
+        );
         const message = await this.client().telegram.sendDocument(
           chatId,
           { source: buffer, filename: meta.appName ? `${meta.appName}.apk` : "build.apk" },

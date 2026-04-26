@@ -124,6 +124,29 @@ function bootstrapFromEnv(): ParsedRootConfig {
           discordMaxMB: Number(process.env.DISCORD_MAX_MB ?? 25),
           emailMaxMB: Number(process.env.EMAIL_MAX_MB ?? 25),
         },
+        intel: {
+          changelog: {
+            enabled: process.env.INTEL_CHANGELOG_ENABLED === "true",
+            repoPath: process.env.INTEL_CHANGELOG_REPO,
+          },
+          crashlytics: {
+            enabled: process.env.INTEL_CRASHLYTICS_ENABLED === "true",
+            source: process.env.INTEL_CRASHLYTICS_SOURCE as
+              | "file"
+              | "http"
+              | undefined,
+            path: process.env.INTEL_CRASHLYTICS_PATH,
+            authHeader: process.env.INTEL_CRASHLYTICS_AUTH_HEADER,
+          },
+          tracking: {
+            enabled: process.env.INTEL_TRACKING_ENABLED === "true",
+            baseUrl: process.env.INTEL_TRACKING_BASE_URL,
+            port: process.env.INTEL_TRACKING_PORT
+              ? Number(process.env.INTEL_TRACKING_PORT)
+              : undefined,
+            perRecipient: process.env.INTEL_TRACKING_PER_RECIPIENT === "true",
+          },
+        },
       },
     },
   });
@@ -141,6 +164,7 @@ function toPublicProfile(p: ParsedProfileConfig): ProfileConfig {
     watcher: p.watcher,
     naming: p.naming,
     limits: p.limits,
+    intel: p.intel,
   } as ProfileConfig;
 }
 
@@ -219,6 +243,22 @@ export class ConfigStore {
       watcher: { ...(current?.watcher ?? {}), ...(patch.watcher ?? {}) },
       naming: { ...(current?.naming ?? {}), ...(patch.naming ?? {}) },
       limits: { ...(current?.limits ?? {}), ...(patch.limits ?? {}) },
+      intel: {
+        ...(current?.intel ?? {}),
+        ...(patch.intel ?? {}),
+        changelog: {
+          ...(current?.intel?.changelog ?? {}),
+          ...(patch.intel?.changelog ?? {}),
+        },
+        crashlytics: {
+          ...(current?.intel?.crashlytics ?? {}),
+          ...(patch.intel?.crashlytics ?? {}),
+        },
+        tracking: {
+          ...(current?.intel?.tracking ?? {}),
+          ...(patch.intel?.tracking ?? {}),
+        },
+      },
     });
 
     this.config = {

@@ -1,6 +1,6 @@
 {
   "name": "build-delivery-mcp",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "MCP server that watches mobile build directories, extracts APK/AAB metadata, renames via template, and delivers to Telegram + WhatsApp in under 5 seconds.",
   "type": "module",
   "main": "dist/index.js",

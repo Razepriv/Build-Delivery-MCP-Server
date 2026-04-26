@@ -1,5 +1,24 @@
-import type { BuildMetadata } from "../types.js";
+import type { BuildMetadata, Changelog, CrashStats } from "../types.js";
 import { bytesToMB } from "../utils/fs.js";
+import {
+  formatChangelogHtml,
+  formatChangelogText,
+  formatCrashStatsHtml,
+  formatCrashStatsText,
+  formatInstallLinkHtml,
+  formatInstallLinkText,
+} from "../intel/formatter.js";
+
+/**
+ * Optional intel sections to append after the standard caption body.
+ * The pipeline assembles this once per build (changelog + crash stats)
+ * plus once per recipient (install URL, when tracking is enabled).
+ */
+export interface IntelPayload {
+  readonly changelog?: Changelog | null;
+  readonly crashStats?: CrashStats | null;
+  readonly installUrl?: string;
+}
 
 function escapeHtml(raw: string): string {
   return raw
@@ -12,7 +31,25 @@ function timestamp(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
-export function telegramCaption(meta: BuildMetadata, customMessage?: string): string {
+function intelTextSections(intel?: IntelPayload): string[] {
+  const lines: string[] = [];
+  if (intel?.installUrl) {
+    lines.push("", formatInstallLinkText(intel.installUrl));
+  }
+  if (intel?.changelog) {
+    lines.push("", formatChangelogText(intel.changelog));
+  }
+  if (intel?.crashStats) {
+    lines.push("", formatCrashStatsText(intel.crashStats));
+  }
+  return lines;
+}
+
+export function telegramCaption(
+  meta: BuildMetadata,
+  customMessage?: string,
+  intel?: IntelPayload,
+): string {
   const lines = [
     `📦 <b>${escapeHtml(meta.appName)}</b>`,
     `<b>Version:</b> ${escapeHtml(meta.versionName)} (code ${escapeHtml(meta.versionCode)})`,
@@ -27,10 +64,27 @@ export function telegramCaption(meta: BuildMetadata, customMessage?: string): st
   if (customMessage) {
     lines.push("", escapeHtml(customMessage));
   }
+  // Telegram supports a small HTML subset; we use the HTML intel formatters
+  // when available and fall back to text when they would be empty.
+  if (intel?.installUrl) {
+    lines.push("", formatInstallLinkHtml(intel.installUrl));
+  }
+  if (intel?.changelog) {
+    const html = formatChangelogHtml(intel.changelog);
+    if (html) lines.push("", html);
+  }
+  if (intel?.crashStats) {
+    const html = formatCrashStatsHtml(intel.crashStats);
+    if (html) lines.push("", html);
+  }
   return lines.join("\n");
 }
 
-export function whatsappCaption(meta: BuildMetadata, customMessage?: string): string {
+export function whatsappCaption(
+  meta: BuildMetadata,
+  customMessage?: string,
+  intel?: IntelPayload,
+): string {
   const lines = [
     `📦 *${meta.appName}*`,
     `*Version:* ${meta.versionName} (code ${meta.versionCode})`,
@@ -42,11 +96,16 @@ export function whatsappCaption(meta: BuildMetadata, customMessage?: string): st
   if (customMessage) {
     lines.push("", customMessage);
   }
+  lines.push(...intelTextSections(intel));
   return lines.join("\n");
 }
 
 /** Slack uses *bold* and `inline code` markdown ("mrkdwn" mode). */
-export function slackCaption(meta: BuildMetadata, customMessage?: string): string {
+export function slackCaption(
+  meta: BuildMetadata,
+  customMessage?: string,
+  intel?: IntelPayload,
+): string {
   const lines = [
     `:package: *${meta.appName}*`,
     `*Version:* ${meta.versionName} (code ${meta.versionCode})`,
@@ -63,11 +122,16 @@ export function slackCaption(meta: BuildMetadata, customMessage?: string): strin
   if (customMessage) {
     lines.push("", customMessage);
   }
+  lines.push(...intelTextSections(intel));
   return lines.join("\n");
 }
 
 /** Discord supports the same markdown subset Slack uses, plus emoji shortcodes. */
-export function discordCaption(meta: BuildMetadata, customMessage?: string): string {
+export function discordCaption(
+  meta: BuildMetadata,
+  customMessage?: string,
+  intel?: IntelPayload,
+): string {
   const lines = [
     `📦 **${meta.appName}**`,
     `**Version:** ${meta.versionName} (code ${meta.versionCode})`,
@@ -79,6 +143,7 @@ export function discordCaption(meta: BuildMetadata, customMessage?: string): str
   if (customMessage) {
     lines.push("", customMessage);
   }
+  lines.push(...intelTextSections(intel));
   return lines.join("\n");
 }
 
@@ -88,7 +153,11 @@ export function emailSubject(meta: BuildMetadata): string {
 }
 
 /** Plain-text fallback body for email. */
-export function emailTextBody(meta: BuildMetadata, customMessage?: string): string {
+export function emailTextBody(
+  meta: BuildMetadata,
+  customMessage?: string,
+  intel?: IntelPayload,
+): string {
   const lines = [
     `${meta.appName} — v${meta.versionName} (code ${meta.versionCode})`,
     "",
@@ -105,16 +174,36 @@ export function emailTextBody(meta: BuildMetadata, customMessage?: string): stri
   if (customMessage) {
     lines.push("", customMessage);
   }
+  lines.push(...intelTextSections(intel));
   lines.push("", "— Build Delivery MCP");
   return lines.join("\n");
 }
 
 /** HTML email body — renders well on most clients without inline CSS. */
-export function emailHtmlBody(meta: BuildMetadata, customMessage?: string): string {
+export function emailHtmlBody(
+  meta: BuildMetadata,
+  customMessage?: string,
+  intel?: IntelPayload,
+): string {
   const escape = escapeHtml;
   const customLine = customMessage
     ? `<p style="margin-top:16px;color:#333;">${escape(customMessage).replace(/\n/g, "<br>")}</p>`
     : "";
+  const intelBlocks: string[] = [];
+  if (intel?.installUrl) {
+    intelBlocks.push(
+      `<p style="margin-top:16px;font-weight:bold;">${formatInstallLinkHtml(intel.installUrl)}</p>`,
+    );
+  }
+  if (intel?.changelog) {
+    const html = formatChangelogHtml(intel.changelog);
+    if (html) intelBlocks.push(`<div style="margin-top:16px;">${html}</div>`);
+  }
+  if (intel?.crashStats) {
+    const html = formatCrashStatsHtml(intel.crashStats);
+    if (html) intelBlocks.push(`<div style="margin-top:16px;">${html}</div>`);
+  }
+
   return `<!doctype html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#111;">
   <h2 style="margin:0 0 12px 0;">📦 ${escape(meta.appName)}</h2>
@@ -127,13 +216,18 @@ export function emailHtmlBody(meta: BuildMetadata, customMessage?: string): stri
     ${meta.minSdkVersion ? `<tr><td style="padding:4px 12px 4px 0;color:#666;">minSDK</td><td>${escape(meta.minSdkVersion)}${meta.targetSdkVersion ? ` (target ${escape(meta.targetSdkVersion)})` : ""}</td></tr>` : ""}
   </table>
   ${customLine}
+  ${intelBlocks.join("\n")}
   <hr style="margin-top:24px;border:none;border-top:1px solid #eee;">
   <p style="color:#999;font-size:12px;">Sent by Build Delivery MCP</p>
 </body></html>`;
 }
 
 /** Adaptive Card payload for Microsoft Teams incoming webhook. */
-export function teamsCard(meta: BuildMetadata, customMessage?: string): unknown {
+export function teamsCard(
+  meta: BuildMetadata,
+  customMessage?: string,
+  intel?: IntelPayload,
+): unknown {
   const facts = [
     { title: "Version", value: `${meta.versionName} (code ${meta.versionCode})` },
     { title: "Package", value: meta.packageName },
@@ -147,6 +241,12 @@ export function teamsCard(meta: BuildMetadata, customMessage?: string): unknown 
       value: meta.targetSdkVersion
         ? `${meta.minSdkVersion} (target ${meta.targetSdkVersion})`
         : meta.minSdkVersion,
+    });
+  }
+  if (intel?.crashStats?.crashFreeRate !== undefined) {
+    facts.push({
+      title: "Crash-free",
+      value: `${(intel.crashStats.crashFreeRate * 100).toFixed(2)}% (v${intel.crashStats.versionName})`,
     });
   }
 
@@ -167,6 +267,23 @@ export function teamsCard(meta: BuildMetadata, customMessage?: string): unknown 
       spacing: "Medium",
     });
   }
+  if (intel?.changelog) {
+    body.push({
+      type: "TextBlock",
+      wrap: true,
+      text: formatChangelogText(intel.changelog),
+      spacing: "Medium",
+    });
+  }
+
+  const actions: unknown[] = [];
+  if (intel?.installUrl) {
+    actions.push({
+      type: "Action.OpenUrl",
+      title: "Install",
+      url: intel.installUrl,
+    });
+  }
 
   return {
     type: "message",
@@ -178,6 +295,7 @@ export function teamsCard(meta: BuildMetadata, customMessage?: string): unknown 
           type: "AdaptiveCard",
           version: "1.5",
           body,
+          actions: actions.length > 0 ? actions : undefined,
         },
       },
     ],

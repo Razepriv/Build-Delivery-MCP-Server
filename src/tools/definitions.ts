@@ -222,4 +222,92 @@ export const toolDefinitions: Tool[] = [
       required: ["directory"],
     },
   },
+  {
+    name: "set_intel_settings",
+    description:
+      "Configure distribution intelligence for a profile: changelog generation, crashlytics correlation, and install tracking. All three are independently toggleable.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: { type: "string" },
+        changelog: {
+          type: "object",
+          properties: {
+            enabled: { type: "boolean" },
+            repoPath: { type: "string", description: "Path to the git repo." },
+            maxCommits: { type: "number" },
+            includeTypes: {
+              type: "array",
+              items: { type: "string" },
+              description: "Conventional-commit types to include (default: feat, fix, perf, refactor).",
+            },
+          },
+        },
+        crashlytics: {
+          type: "object",
+          properties: {
+            enabled: { type: "boolean" },
+            source: { type: "string", enum: ["file", "http"] },
+            path: {
+              type: "string",
+              description: "File path (source=file) or URL (source=http) returning the CrashStats JSON shape.",
+            },
+            authHeader: {
+              type: "string",
+              description: "Optional Authorization header for HTTP source (e.g. 'Bearer ...').",
+            },
+          },
+        },
+        tracking: {
+          type: "object",
+          properties: {
+            enabled: { type: "boolean" },
+            baseUrl: { type: "string", description: "Public base URL operators expose for the tracker." },
+            port: { type: "number" },
+            perRecipient: { type: "boolean" },
+            tokenTtlHours: { type: "number" },
+            eventLogPath: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: "start_install_server",
+    description:
+      "Start the local install-tracking HTTP server. Reads the configured port + event log path from the active profile (or the supplied profile).",
+    inputSchema: {
+      type: "object",
+      properties: { profile: { type: "string" } },
+    },
+  },
+  {
+    name: "stop_install_server",
+    description: "Stop the install-tracking HTTP server (if running).",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_install_events",
+    description: "Return the most recent install events recorded by the tracker (token clicks + downloads).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", default: 50 },
+      },
+    },
+  },
+  {
+    name: "generate_changelog",
+    description:
+      "On-demand changelog generation between two refs (default: most recent semver tag → HEAD). Returns the structured Changelog payload.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: { type: "string" },
+        fromRef: { type: "string" },
+        toRef: { type: "string" },
+        maxCommits: { type: "number" },
+      },
+    },
+  },
 ];

@@ -12,6 +12,8 @@ import {
   emailTextBody,
 } from "./captions.js";
 import { filterByTags } from "./tags.js";
+import { intelForRecipient } from "./intelHelper.js";
+import type { DeliveryIntel } from "../intel/orchestrator.js";
 import { logger } from "../utils/logger.js";
 import { bytesToMB } from "../utils/fs.js";
 
@@ -72,6 +74,7 @@ export class EmailService {
     meta: BuildMetadata,
     customMessage?: string,
     tags?: readonly RecipientTag[],
+    intel?: DeliveryIntel,
   ): Promise<DeliveryResult[]> {
     if (!this.isReady()) {
       throw new Error(
@@ -96,14 +99,15 @@ export class EmailService {
     }
 
     const subject = emailSubject(meta);
-    const text = emailTextBody(meta, customMessage);
-    const html = emailHtmlBody(meta, customMessage);
     const filename = path.basename(filePath);
 
     return Promise.all(
       targets.map(async (r) => {
         const start = Date.now();
         try {
+          const recipientIntel = intelForRecipient(intel, "email", r.id);
+          const text = emailTextBody(meta, customMessage, recipientIntel);
+          const html = emailHtmlBody(meta, customMessage, recipientIntel);
           const info = await this.getTransporter().sendMail({
             from: this.config.from!,
             to: r.displayName ? `"${r.displayName}" <${r.id}>` : r.id,

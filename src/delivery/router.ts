@@ -11,6 +11,7 @@ import { SlackService } from "./slack.js";
 import { DiscordService } from "./discord.js";
 import { EmailService } from "./email.js";
 import { TeamsService } from "./teams.js";
+import type { DeliveryIntel } from "../intel/orchestrator.js";
 import { logger } from "../utils/logger.js";
 
 export interface DeliveryRouterOptions {
@@ -22,6 +23,7 @@ export interface DeliveryOptions {
   readonly channels?: readonly ChannelName[];
   readonly customMessage?: string;
   readonly tags?: readonly RecipientTag[];
+  readonly intel?: DeliveryIntel;
 }
 
 export class DeliveryRouter {
@@ -94,6 +96,7 @@ export class DeliveryRouter {
     const tagSummary = options.tags?.length ? ` [tags: ${options.tags.join(",")}]` : "";
     logger.info(`Dispatching to channels: ${targets.join(", ")}${tagSummary}`);
 
+    const intel = options.intel;
     const jobs = targets.map(async (channel) => {
       switch (channel) {
         case "telegram":
@@ -102,6 +105,7 @@ export class DeliveryRouter {
             meta,
             options.customMessage,
             options.tags,
+            intel,
           );
         case "whatsapp":
           return this.whatsapp.sendDocument(
@@ -109,6 +113,7 @@ export class DeliveryRouter {
             meta,
             options.customMessage,
             options.tags,
+            intel,
           );
         case "slack":
           return this.slack.sendDocument(
@@ -116,6 +121,7 @@ export class DeliveryRouter {
             meta,
             options.customMessage,
             options.tags,
+            intel,
           );
         case "discord":
           return this.discord.sendDocument(
@@ -123,6 +129,7 @@ export class DeliveryRouter {
             meta,
             options.customMessage,
             options.tags,
+            intel,
           );
         case "email":
           return this.email.sendDocument(
@@ -130,6 +137,7 @@ export class DeliveryRouter {
             meta,
             options.customMessage,
             options.tags,
+            intel,
           );
         case "teams":
           return this.teams.sendDocument(
@@ -137,6 +145,7 @@ export class DeliveryRouter {
             meta,
             options.customMessage,
             options.tags,
+            intel,
           );
         default:
           return [] as DeliveryResult[];

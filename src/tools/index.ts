@@ -11,6 +11,11 @@ import {
   handleSendNotification,
   handleUpdateNamingPattern,
   handleSetWatchDirectory,
+  handleSetIntelSettings,
+  handleStartInstallServer,
+  handleStopInstallServer,
+  handleGetInstallEvents,
+  handleGenerateChangelog,
 } from "./handlers.js";
 
 type ToolHandler = (args: unknown, ctx: HandlerContext) => Promise<CallToolResult>;
@@ -25,6 +30,11 @@ const registry: Record<string, ToolHandler> = {
   send_notification: handleSendNotification,
   update_naming_pattern: handleUpdateNamingPattern,
   set_watch_directory: handleSetWatchDirectory,
+  set_intel_settings: handleSetIntelSettings,
+  start_install_server: handleStartInstallServer,
+  stop_install_server: handleStopInstallServer,
+  get_install_events: handleGetInstallEvents,
+  generate_changelog: handleGenerateChangelog,
 };
 
 export async function dispatchTool(

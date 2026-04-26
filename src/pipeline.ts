@@ -12,6 +12,8 @@ import { parseBuildFile } from "./parser/index.js";
 import { renameToStaging } from "./renamer/index.js";
 import { DeliveryRouter } from "./delivery/router.js";
 import { BuildHistory } from "./history/buildHistory.js";
+import { IntelOrchestrator } from "./intel/orchestrator.js";
+import type { TokenStore } from "./install-tracking/tokenStore.js";
 import { logger } from "./utils/logger.js";
 import { safeRemove, bytesToMB } from "./utils/fs.js";
 
@@ -24,11 +26,17 @@ export interface PipelineOutcome {
 
 export class DeliveryPipeline {
   private readonly routers = new Map<string, DeliveryRouter>();
+  private tokenStore: TokenStore | null = null;
 
   constructor(
     private readonly config: ConfigStore,
     private readonly history: BuildHistory,
   ) {}
+
+  /** Inject the install-tracking TokenStore. Pass null to disable tracking. */
+  setTokenStore(store: TokenStore | null): void {
+    this.tokenStore = store;
+  }
 
   private getRouter(profileName: string, profile: ProfileConfig): DeliveryRouter {
     const existing = this.routers.get(profileName);
@@ -58,6 +66,15 @@ export class DeliveryPipeline {
       profile.naming.pattern,
     );
 
+    const buildId = randomUUID();
+    const orchestrator = new IntelOrchestrator(profile, this.tokenStore, {
+      buildId,
+      profile: profileName,
+      stagedPath,
+      stagedFilename,
+    });
+    const buildIntel = await orchestrator.collectBuildLevel();
+
     const router = this.getRouter(profileName, profile);
     const targets: ChannelName[] | undefined = options.channels
       ? [...options.channels]
@@ -67,12 +84,18 @@ export class DeliveryPipeline {
       channels: targets,
       tags: options.tags,
       customMessage: options.customMessage,
+      intel: {
+        changelog: buildIntel.changelog,
+        crashStats: buildIntel.crashStats,
+        defaultInstallUrl: buildIntel.defaultInstallUrl,
+        installUrlFor: orchestrator.installUrlResolver(),
+      },
     });
 
     await safeRemove(stagedPath);
 
     const entry: BuildHistoryEntry = {
-      id: randomUUID(),
+      id: buildId,
       timestamp: Date.now(),
       profile: profileName,
       originalPath: absolutePath,
