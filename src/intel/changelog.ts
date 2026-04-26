@@ -44,11 +44,13 @@ async function isGitRepo(repoPath: string): Promise<boolean> {
 }
 
 async function findPreviousTag(repoPath: string, toRef: string): Promise<string | null> {
-  // List tags reachable from toRef^ (anything BEFORE the current ref), newest first.
+  // Sort tags by semver descending (`version:refname` understands v-prefix
+  // and pre-release segments). Falls back to creatordate if that ever
+  // fails on an ancient git.
   try {
     const out = await git(repoPath, [
       "for-each-ref",
-      "--sort=-creatordate",
+      "--sort=-version:refname",
       "--format=%(refname:short)",
       "refs/tags",
     ]);

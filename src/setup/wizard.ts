@@ -7,6 +7,8 @@ import fs from "fs-extra";
 import { ConfigStore } from "../config/store.js";
 import { emitCIWorkflow, type CIPlatform } from "./ciSnippets.js";
 import type { ChannelName } from "../types.js";
+import { detectAgents } from "../install-agents/detector.js";
+import { buildMcpEntry, installAgents } from "../install-agents/install.js";
 
 async function ask(rl: readline.Interface, prompt: string, fallback = ""): Promise<string> {
   const hint = fallback ? ` [${fallback}]` : "";
@@ -305,6 +307,51 @@ async function main() {
         output.write(`✓ CI snippet written to ${outPath}\n`);
       } else {
         output.write("\nLocal-only mode — just run `npm start` or point your MCP client at dist/index.js\n");
+      }
+    }
+
+    // ── Auto-register with detected coding agents ─────────────────
+    const detected = await detectAgents();
+    if (detected.length > 0) {
+      output.write("\n─── Auto-register with coding agents ───\n");
+      output.write("Detected:\n");
+      for (const d of detected) {
+        output.write(`  • ${d.descriptor.displayName.padEnd(22)} → ${d.resolvedConfigPath}\n`);
+      }
+      const wantsRegister = await askYesNo(
+        rl,
+        "Register the build-delivery MCP server with these agents now?",
+        true,
+      );
+      if (wantsRegister) {
+        const entry = buildMcpEntry({
+          env: { CONFIG_PATH: configPath },
+        });
+        const wantsInstr = await askYesNo(
+          rl,
+          "Also write 'auto-deliver on every build' instructions into agent rules files?",
+          true,
+        );
+        const wantsHooks = await askYesNo(
+          rl,
+          "Install Gradle init script so every Android build pipes through delivery?",
+          true,
+        );
+        const report = await installAgents({
+          entry,
+          writeInstructions: wantsInstr,
+          writeBuildHooks: wantsHooks,
+          deliverCommand: "build-delivery-mcp deliver",
+        });
+        output.write("\n");
+        for (const r of report.mcpOutcomes) {
+          output.write(`  ✓ ${r.agentId.padEnd(18)} ${r.status.padEnd(10)} ${r.path}\n`);
+        }
+        if (report.buildHookOutcomes.length > 0) {
+          for (const r of report.buildHookOutcomes) {
+            output.write(`  ✓ gradle              ${r.status.padEnd(10)} ${r.path}\n`);
+          }
+        }
       }
     }
 
