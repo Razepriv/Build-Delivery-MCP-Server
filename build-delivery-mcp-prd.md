@@ -317,6 +317,14 @@ Telegram + WhatsApp QR delivery, file watcher, APK/AAB parsing, template renamin
 - Per-channel size caps: Slack 1024 MB, Discord 25 MB, Email 25 MB (all configurable).
 - Default watch extensions extended to `[".apk", ".aab", ".ipa"]`.
 
+**Phase 3 — Distribution intelligence** ✅ *Shipped.*
+- **Changelog generation** from `git log` between the previous semver tag and `HEAD`. Commits are parsed for conventional-commit type/scope/breaking marker; output is grouped (Features → Fixes → Performance → Refactors → Other) and rendered into HTML for Telegram/Email and plain markdown for Slack/Discord/WhatsApp/Teams. Auto-discovers the previous tag via `git for-each-ref --sort=-creatordate refs/tags`. Configurable `includeTypes` and `maxCommits`.
+- **Crashlytics correlation** as a vendor-neutral integration. Reads a `CrashStats` JSON shape from either a local file or an HTTP endpoint (with optional `Authorization` header). Captions surface `crashFreeRate`, total crashes, affected users, and the top issue for the previous version. Operators wire BigQuery exports, the Crashlytics REST API, or any analytics pipeline that produces the shape.
+- **Install tracking** via a local HTTP server (Node built-in `http`, no new deps for the server itself). Tokens are 48-char hex with constant-time compare; per-recipient mode issues distinct tokens per `(channel, recipient)`. Routes: `/install/<token>` (serves file with `content-disposition: attachment`), `/install/<token>/info` (JSON metadata), `/healthz`. Events flow to `./.tracking/events.jsonl` (gitignored). `X-Forwarded-For` honored only with `INTEL_TRACKING_TRUST_PROXY=true`. The server auto-starts on boot when `intel.tracking.enabled=true`, and can be controlled at runtime via 5 new MCP tools (`set_intel_settings`, `start_install_server`, `stop_install_server`, `get_install_events`, `generate_changelog`) — bringing the total tool count to **14**.
+- **Per-recipient install URLs** flow through every channel: the `IntelOrchestrator` issues tokens lazily during caption assembly, the `intelForRecipient` helper composes a `(channel, recipientId)` URL, and each channel's caption builder embeds it. Slack switches from multi-channel batch upload to per-channel loop when per-recipient tracking is in play (so each channel sees its own URL); other channels already loop natively.
+- Captions extended end-to-end: Telegram/Email pick up HTML changelog + stability blocks, Slack/Discord/WhatsApp get plain-text equivalents, Teams Adaptive Cards gain a `Crash-free` fact + an `Action.OpenUrl` install button.
+- Bumped to **v1.2.0**.
+
 **Phase 3 — Distribution intelligence**
 Build-to-build changelog generation from git log between tags. Crash-report correlation (pull Firebase Crashlytics per version). Tester install tracking via unique links.
 

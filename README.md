@@ -7,6 +7,7 @@ Build Delivery MCP is a Model Context Protocol (MCP) server that automates the "
 - **Six delivery channels:** Telegram (Bot API), WhatsApp (QR-based, via `whatsapp-web.js`), Slack (Web API), Discord (webhooks), Email (SMTP), Microsoft Teams (webhook notifications)
 - **Three build formats:** Android `.apk` (via `aapt2`/`aapt`), Android `.aab` (via `bundletool`), iOS `.ipa` (Info.plist parsing — XML & binary)
 - **Recipient tagging:** label recipients (`qa-team`, `design-leads`, `ceo`) and scope deliveries with a `tags` filter — broadcast to everyone, or just the people who need this build
+- **Distribution intelligence:** auto-generated changelog from git tags, previous-version stability stats (Crashlytics or any source), and install tracking with unique per-recipient links served from a local HTTP endpoint
 - **Multi-project profiles:** one installation, many clients, isolated credentials
 - **Zero data loss:** originals are never mutated; everything is copy-to-staging → deliver → cleanup
 - **MCP-native:** works in Claude Desktop, Claude Code, Cursor; also runs as a standalone watcher
@@ -214,7 +215,7 @@ All settings have env-var equivalents for bootstrap and CI use:
 
 ## MCP tools
 
-The server exposes nine tools over stdio. Every handler validates input with `zod` before touching the filesystem or network.
+The server exposes 14 tools over stdio. Every handler validates input with `zod` before touching the filesystem or network.
 
 | Tool | Purpose |
 |---|---|
@@ -227,6 +228,11 @@ The server exposes nine tools over stdio. Every handler validates input with `zo
 | `send_notification` | Send a freeform message through configured channels with optional tag filter — great for "build failed" alerts. |
 | `update_naming_pattern` | Hot-swap the filename template without a restart. |
 | `set_watch_directory` | Add/change a watch directory and restart the watcher. |
+| **`set_intel_settings`** | Toggle changelog generation, Crashlytics correlation, and install tracking for a profile. Each is independently configurable. |
+| **`generate_changelog`** | On-demand changelog between two git refs. Returns the structured payload — useful for previewing before flipping `enabled`. |
+| **`start_install_server`** | Boot the local install-tracking HTTP server. Reads port + log path from the active profile. |
+| **`stop_install_server`** | Tear down the install-tracking server. |
+| **`get_install_events`** | Return the most recent install events (clicks + downloads). |
 
 Each tool returns a JSON content block. Errors surface as `isError: true` with a human-readable message.
 
@@ -454,11 +460,62 @@ Key properties:
 
 ---
 
+## Distribution intelligence (Phase 3)
+
+Three opt-in capabilities that surface what changed and who installed it. All three are off by default — flip them on per profile via `set_intel_settings` or the wizard.
+
+### Changelog generation
+
+Set `intel.changelog.enabled = true` and point `repoPath` at the git repo where the build was produced. Every delivery caption gains a *What's changed* section grouping commits between the previous semver tag and `HEAD` by conventional-commit type:
+
+```
+What's changed (v2.4.0 → HEAD):
+• Features:
+  – auth: biometric login
+  – search bar on home
+• Fixes:
+  – crash on cold start
+```
+
+Use the `generate_changelog` tool to preview without enabling.
+
+### Crashlytics correlation
+
+A vendor-neutral integration. Provide stats either as a local JSON file or an HTTP endpoint that returns:
+
+```jsonc
+{
+  "versionName": "2.4.0",
+  "crashFreeRate": 0.987,
+  "totalCrashes": 14,
+  "affectedUsers": 9,
+  "topIssues": [{ "title": "NPE in checkout", "count": 6 }]
+}
+```
+
+Captions then carry a `Stability of v2.4.0` block with crash-free %, total crashes, and the top issue. Operators wire this to BigQuery export, Crashlytics REST, internal analytics — whatever produces the shape.
+
+### Install tracking
+
+Opt-in local HTTP server (default port `7331`) that serves staged builds via unique tokens. Per-recipient mode (`tracking.perRecipient = true`) issues a distinct token per `(channel, recipient)` so install events are attributable.
+
+```
+GET /install/<48-char hex token>          # serves the file with content-disposition
+GET /install/<48-char hex token>/info     # returns {filename, sizeMB, expiresAt} JSON
+GET /healthz                              # liveness probe
+```
+
+Events stream to `./.tracking/events.jsonl` (json-lines, easy to tail or import). Constant-time token compare. `X-Forwarded-For` is honored only when `INTEL_TRACKING_TRUST_PROXY=true` (don't trust it on a directly-exposed port).
+
+The server runs alongside the MCP stdio process. Operators expose it however they like — ngrok, Tailscale, cloudflared, or their own reverse proxy. **Captions embed the token URL using `intel.tracking.baseUrl`**, so set that to whatever public URL the recipient should hit.
+
+---
+
 ## Roadmap
 
 - **Phase 1 — MVP** ✅ *Shipped.* Telegram + WhatsApp delivery, file watcher, APK/AAB parsing, template renaming, persistent multi-profile config, 9 MCP tools.
 - **Phase 2 — Channel expansion** ✅ *Shipped.* Slack (Web API), Discord (webhooks), Email (SMTP), Microsoft Teams (Adaptive Card webhooks). iOS `.ipa` parsing via Info.plist (XML & binary). Multi-recipient tagging across all channels.
-- **Phase 3 — Distribution intelligence** *Next.* Changelog generation from git tags. Crashlytics correlation. Tester install tracking via unique links.
+- **Phase 3 — Distribution intelligence** ✅ *Shipped.* Changelog generation from git tags (conventional-commit grouping). Vendor-neutral Crashlytics correlation (file or HTTP source). Install tracking with a local HTTP server, per-recipient tokens, and a JSON-lines event log. 5 new MCP tools (14 total).
 - **Phase 4 — Cloud & multi-tenant.** Cloud storage backing (S3/R2/GDrive) for builds >50MB. Public install links with expiry. Web dashboard. Multi-tenant SaaS.
 - **Phase 5 — Enterprise.** SSO, audit logs, RBAC, on-prem deployment, SOC 2 compliance.
 
