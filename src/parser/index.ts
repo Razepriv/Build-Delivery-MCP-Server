@@ -2,6 +2,7 @@ import path from "node:path";
 import type { BuildMetadata } from "../types.js";
 import { parseApk } from "./apkParser.js";
 import { parseAab } from "./aabParser.js";
+import { parseIpa } from "./ipaParser.js";
 import { filenameFallback } from "./filenameFallback.js";
 
 export async function parseBuildFile(filePath: string): Promise<BuildMetadata> {
@@ -11,6 +12,8 @@ export async function parseBuildFile(filePath: string): Promise<BuildMetadata> {
       return parseApk(filePath);
     case ".aab":
       return parseAab(filePath);
+    case ".ipa":
+      return parseIpa(filePath);
     default:
       return filenameFallback(filePath);
   }

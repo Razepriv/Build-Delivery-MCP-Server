@@ -1,6 +1,19 @@
 import { z } from "zod";
 
-export const ChannelSchema = z.enum(["telegram", "whatsapp"]);
+export const ChannelSchema = z.enum([
+  "telegram",
+  "whatsapp",
+  "slack",
+  "discord",
+  "email",
+  "teams",
+]);
+
+const TagListSchema = z.array(z.string().min(1)).optional();
+const TaggedRecipientInputSchema = z.object({
+  id: z.string().min(1),
+  tags: TagListSchema,
+});
 
 export const ConfigureChannelSchema = z.object({
   channel: ChannelSchema,
@@ -10,6 +23,7 @@ export const ConfigureChannelSchema = z.object({
     .object({
       botToken: z.string().min(1),
       chatIds: z.array(z.string().min(1)).min(1),
+      chatTags: z.record(z.string(), z.array(z.string().min(1))).optional(),
     })
     .optional(),
   whatsapp: z
@@ -20,9 +34,47 @@ export const ConfigureChannelSchema = z.object({
           z.object({
             type: z.enum(["contact", "group"]),
             id: z.string().min(1),
+            tags: TagListSchema,
           }),
         )
         .min(1),
+    })
+    .optional(),
+  slack: z
+    .object({
+      botToken: z.string().min(1),
+      channels: z.array(TaggedRecipientInputSchema).min(1),
+    })
+    .optional(),
+  discord: z
+    .object({
+      webhooks: z.array(TaggedRecipientInputSchema).min(1),
+    })
+    .optional(),
+  email: z
+    .object({
+      smtp: z.object({
+        host: z.string().min(1),
+        port: z.number().int().positive(),
+        secure: z.boolean(),
+        user: z.string().optional(),
+        pass: z.string().optional(),
+      }),
+      from: z.string().email(),
+      recipients: z
+        .array(
+          z.object({
+            id: z.string().email(),
+            displayName: z.string().optional(),
+            tags: TagListSchema,
+          }),
+        )
+        .min(1),
+    })
+    .optional(),
+  teams: z
+    .object({
+      webhooks: z.array(TaggedRecipientInputSchema).min(1),
     })
     .optional(),
 });
@@ -33,12 +85,14 @@ export const SendBuildSchema = z.object({
   appName: z.string().optional(),
   version: z.string().optional(),
   channels: z.array(ChannelSchema).optional(),
+  tags: TagListSchema,
   customMessage: z.string().optional(),
 });
 
 export const ProcessApkSchema = z.object({
   filePath: z.string().min(1),
   profile: z.string().optional(),
+  tags: TagListSchema,
 });
 
 export const ListChannelsSchema = z.object({
@@ -58,6 +112,7 @@ export const SendNotificationSchema = z.object({
   message: z.string().min(1),
   profile: z.string().optional(),
   channels: z.array(ChannelSchema).optional(),
+  tags: TagListSchema,
 });
 
 export const UpdateNamingPatternSchema = z.object({

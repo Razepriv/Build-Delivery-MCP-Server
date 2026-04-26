@@ -2,8 +2,15 @@ import path from "node:path";
 import fs from "fs-extra";
 import qrcodeTerminal from "qrcode-terminal";
 import pkg from "whatsapp-web.js";
-import type { BuildMetadata, DeliveryResult, WhatsAppConfig, WhatsAppRecipient } from "../types.js";
+import type {
+  BuildMetadata,
+  DeliveryResult,
+  RecipientTag,
+  WhatsAppConfig,
+  WhatsAppRecipient,
+} from "../types.js";
 import { whatsappCaption } from "./captions.js";
+import { filterByTags } from "./tags.js";
 import { logger } from "../utils/logger.js";
 import { bytesToMB } from "../utils/fs.js";
 
@@ -92,20 +99,23 @@ export class WhatsAppService {
     }
   }
 
-  private recipientList(): WhatsAppRecipient[] {
-    return (this.config.recipients ?? []).map((r) => r);
+  private recipientList(tags?: readonly RecipientTag[]): WhatsAppRecipient[] {
+    return filterByTags(this.config.recipients ?? [], tags);
   }
 
   async sendDocument(
     filePath: string,
     meta: BuildMetadata,
     customMessage?: string,
+    tags?: readonly RecipientTag[],
   ): Promise<DeliveryResult[]> {
+    const targets = this.recipientList(tags);
+
     const sizeMB = bytesToMB(meta.fileSize);
     if (sizeMB > this.maxMB) {
       const msg = `File is ${sizeMB} MB; exceeds WhatsApp cap of ${this.maxMB} MB.`;
       logger.warn(msg);
-      return this.recipientList().map((r) => ({
+      return targets.map((r) => ({
         channel: "whatsapp" as const,
         recipient: r.id,
         success: false,
@@ -119,7 +129,7 @@ export class WhatsAppService {
     const media = MessageMedia.fromFilePath(filePath);
 
     const results = await Promise.all(
-      this.recipientList().map(async (r) => {
+      targets.map(async (r) => {
         const start = Date.now();
         try {
           const sent = await this.client!.sendMessage(r.id, media, { caption, sendMediaAsDocument: true });
@@ -144,10 +154,13 @@ export class WhatsAppService {
     return results;
   }
 
-  async sendMessage(message: string): Promise<DeliveryResult[]> {
+  async sendMessage(
+    message: string,
+    tags?: readonly RecipientTag[],
+  ): Promise<DeliveryResult[]> {
     await this.ensureClient();
     return Promise.all(
-      this.recipientList().map(async (r) => {
+      this.recipientList(tags).map(async (r) => {
         const start = Date.now();
         try {
           const sent = await this.client!.sendMessage(r.id, message);

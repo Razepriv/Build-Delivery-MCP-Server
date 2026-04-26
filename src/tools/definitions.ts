@@ -1,14 +1,32 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
+const CHANNEL_ENUM = [
+  "telegram",
+  "whatsapp",
+  "slack",
+  "discord",
+  "email",
+  "teams",
+] as const;
+
+const TaggedRecipientSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    tags: { type: "array", items: { type: "string" } },
+  },
+  required: ["id"],
+} as const;
+
 export const toolDefinitions: Tool[] = [
   {
     name: "configure_channel",
     description:
-      "Configure Telegram or WhatsApp credentials on a profile. For WhatsApp, triggers QR scan on first use if no saved session exists. Set makeDefault=true to route unspecified deliveries to this channel.",
+      "Configure Telegram, WhatsApp, Slack, Discord, Email (SMTP), or Microsoft Teams credentials on a profile. For WhatsApp, triggers QR scan on first use if no saved session exists. Set makeDefault=true to route unspecified deliveries to this channel.",
     inputSchema: {
       type: "object",
       properties: {
-        channel: { type: "string", enum: ["telegram", "whatsapp"] },
+        channel: { type: "string", enum: CHANNEL_ENUM as unknown as string[] },
         profile: { type: "string", description: "Profile name (defaults to 'default')." },
         makeDefault: { type: "boolean" },
         telegram: {
@@ -16,6 +34,11 @@ export const toolDefinitions: Tool[] = [
           properties: {
             botToken: { type: "string" },
             chatIds: { type: "array", items: { type: "string" } },
+            chatTags: {
+              type: "object",
+              additionalProperties: { type: "array", items: { type: "string" } },
+              description: "Per-chat-id tags. Keys are chat IDs.",
+            },
           },
         },
         whatsapp: {
@@ -29,10 +52,59 @@ export const toolDefinitions: Tool[] = [
                 properties: {
                   type: { type: "string", enum: ["contact", "group"] },
                   id: { type: "string" },
+                  tags: { type: "array", items: { type: "string" } },
                 },
                 required: ["type", "id"],
               },
             },
+          },
+        },
+        slack: {
+          type: "object",
+          properties: {
+            botToken: { type: "string" },
+            channels: { type: "array", items: TaggedRecipientSchema },
+          },
+        },
+        discord: {
+          type: "object",
+          properties: {
+            webhooks: { type: "array", items: TaggedRecipientSchema },
+          },
+        },
+        email: {
+          type: "object",
+          properties: {
+            smtp: {
+              type: "object",
+              properties: {
+                host: { type: "string" },
+                port: { type: "number" },
+                secure: { type: "boolean" },
+                user: { type: "string" },
+                pass: { type: "string" },
+              },
+              required: ["host", "port", "secure"],
+            },
+            from: { type: "string" },
+            recipients: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  displayName: { type: "string" },
+                  tags: { type: "array", items: { type: "string" } },
+                },
+                required: ["id"],
+              },
+            },
+          },
+        },
+        teams: {
+          type: "object",
+          properties: {
+            webhooks: { type: "array", items: TaggedRecipientSchema },
           },
         },
       },
@@ -42,7 +114,7 @@ export const toolDefinitions: Tool[] = [
   {
     name: "send_build",
     description:
-      "Manually process a build file: parse → rename → deliver. Use this to bypass the watcher, override metadata, or target specific channels.",
+      "Manually process a build file: parse → rename → deliver. Use this to bypass the watcher, override metadata, or target specific channels and recipient tags.",
     inputSchema: {
       type: "object",
       properties: {
@@ -52,7 +124,13 @@ export const toolDefinitions: Tool[] = [
         version: { type: "string" },
         channels: {
           type: "array",
-          items: { type: "string", enum: ["telegram", "whatsapp"] },
+          items: { type: "string", enum: CHANNEL_ENUM as unknown as string[] },
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional tag filter. Only deliver to recipients carrying any of these tags.",
         },
         customMessage: { type: "string" },
       },
@@ -62,12 +140,13 @@ export const toolDefinitions: Tool[] = [
   {
     name: "process_apk",
     description:
-      "Full-metadata auto flow for an APK/AAB. Alias for send_build with no overrides — used by the watcher and by CI pipelines.",
+      "Full-metadata auto flow for an APK/AAB/IPA. Alias for send_build — used by the watcher and by CI pipelines.",
     inputSchema: {
       type: "object",
       properties: {
         filePath: { type: "string" },
         profile: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
       },
       required: ["filePath"],
     },
@@ -86,7 +165,7 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        channel: { type: "string", enum: ["telegram", "whatsapp"] },
+        channel: { type: "string", enum: CHANNEL_ENUM as unknown as string[] },
         profile: { type: "string" },
       },
     },
@@ -104,7 +183,7 @@ export const toolDefinitions: Tool[] = [
   {
     name: "send_notification",
     description:
-      "Send a freeform text message through configured channels. Useful for build-failed alerts from CI.",
+      "Send a freeform text message through configured channels. Useful for build-failed alerts from CI. Supports tag filtering.",
     inputSchema: {
       type: "object",
       properties: {
@@ -112,8 +191,9 @@ export const toolDefinitions: Tool[] = [
         profile: { type: "string" },
         channels: {
           type: "array",
-          items: { type: "string", enum: ["telegram", "whatsapp"] },
+          items: { type: "string", enum: CHANNEL_ENUM as unknown as string[] },
         },
+        tags: { type: "array", items: { type: "string" } },
       },
       required: ["message"],
     },

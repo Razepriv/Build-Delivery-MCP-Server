@@ -38,9 +38,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@slack/web-api": "^7.8.0",
+    "adm-zip": "^0.5.16",
+    "bplist-parser": "^0.3.2",
     "chokidar": "^3.6.0",
     "dotenv": "^16.4.5",
     "fs-extra": "^11.2.0",
+    "nodemailer": "^8.0.6",
     "qrcode-terminal": "^0.12.0",
     "telegraf": "^4.16.3",
     "whatsapp-web.js": "^1.23.0",
@@ -48,8 +52,10 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^20.12.0",
+    "@types/nodemailer": "^6.4.17",
     "@types/qrcode-terminal": "^0.12.2",
     "@vitest/coverage-v8": "^4.1.5",
     "rimraf": "^5.0.5",

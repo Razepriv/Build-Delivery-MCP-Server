@@ -65,6 +65,7 @@ export class DeliveryPipeline {
 
     const results = await router.deliverBuild(stagedPath, meta, {
       channels: targets,
+      tags: options.tags,
       customMessage: options.customMessage,
     });
 

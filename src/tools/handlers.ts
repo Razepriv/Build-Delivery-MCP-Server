@@ -57,20 +57,55 @@ export async function handleConfigureChannel(
   const existing = ctx.config.snapshot().profiles[profileName];
 
   const patch: Record<string, unknown> = {};
-  if (input.channel === "telegram") {
-    if (!input.telegram) return errorResult("Telegram config block required.");
-    patch.telegram = {
-      enabled: true,
-      botToken: input.telegram.botToken,
-      chatIds: input.telegram.chatIds,
-    };
-  } else {
-    if (!input.whatsapp) return errorResult("WhatsApp config block required.");
-    patch.whatsapp = {
-      enabled: true,
-      sessionPath: input.whatsapp.sessionPath ?? `./.wwebjs_auth/${profileName}`,
-      recipients: input.whatsapp.recipients,
-    };
+  switch (input.channel) {
+    case "telegram":
+      if (!input.telegram) return errorResult("Telegram config block required.");
+      patch.telegram = {
+        enabled: true,
+        botToken: input.telegram.botToken,
+        chatIds: input.telegram.chatIds,
+        chatTags: input.telegram.chatTags,
+      };
+      break;
+    case "whatsapp":
+      if (!input.whatsapp) return errorResult("WhatsApp config block required.");
+      patch.whatsapp = {
+        enabled: true,
+        sessionPath: input.whatsapp.sessionPath ?? `./.wwebjs_auth/${profileName}`,
+        recipients: input.whatsapp.recipients,
+      };
+      break;
+    case "slack":
+      if (!input.slack) return errorResult("Slack config block required.");
+      patch.slack = {
+        enabled: true,
+        botToken: input.slack.botToken,
+        channels: input.slack.channels,
+      };
+      break;
+    case "discord":
+      if (!input.discord) return errorResult("Discord config block required.");
+      patch.discord = {
+        enabled: true,
+        webhooks: input.discord.webhooks,
+      };
+      break;
+    case "email":
+      if (!input.email) return errorResult("Email config block required.");
+      patch.email = {
+        enabled: true,
+        smtp: input.email.smtp,
+        from: input.email.from,
+        recipients: input.email.recipients,
+      };
+      break;
+    case "teams":
+      if (!input.teams) return errorResult("Teams config block required.");
+      patch.teams = {
+        enabled: true,
+        webhooks: input.teams.webhooks,
+      };
+      break;
   }
   if (input.makeDefault) patch.defaultChannel = input.channel;
 
@@ -113,6 +148,7 @@ export async function handleSendBuild(
       appName: parsed.data.appName,
       version: parsed.data.version,
       channels: parsed.data.channels as ChannelName[] | undefined,
+      tags: parsed.data.tags,
       customMessage: parsed.data.customMessage,
     });
     return successResult({
@@ -134,7 +170,11 @@ export async function handleProcessApk(
   const parsed = ProcessApkSchema.safeParse(args);
   if (!parsed.success) return validationError(parsed.error);
   return handleSendBuild(
-    { filePath: parsed.data.filePath, profile: parsed.data.profile },
+    {
+      filePath: parsed.data.filePath,
+      profile: parsed.data.profile,
+      tags: parsed.data.tags,
+    },
     ctx,
   );
 }
@@ -154,13 +194,51 @@ export async function handleListChannels(
       hasToken: Boolean(profile.telegram.botToken),
       tokenPreview: truncateSecret(profile.telegram.botToken),
       chatIds: profile.telegram.chatIds ?? [],
+      chatTags: profile.telegram.chatTags ?? {},
     },
     whatsapp: {
       enabled: profile.whatsapp.enabled,
       sessionPath: profile.whatsapp.sessionPath,
       recipients: profile.whatsapp.recipients ?? [],
     },
+    slack: {
+      enabled: profile.slack.enabled,
+      hasToken: Boolean(profile.slack.botToken),
+      tokenPreview: truncateSecret(profile.slack.botToken),
+      channels: profile.slack.channels ?? [],
+    },
+    discord: {
+      enabled: profile.discord.enabled,
+      webhooks: (profile.discord.webhooks ?? []).map((w) => ({
+        id: redactWebhookForDisplay(w.id),
+        tags: w.tags ?? [],
+      })),
+    },
+    email: {
+      enabled: profile.email.enabled,
+      smtp: profile.email.smtp
+        ? { ...profile.email.smtp, pass: truncateSecret(profile.email.smtp.pass) }
+        : undefined,
+      from: profile.email.from,
+      recipients: profile.email.recipients ?? [],
+    },
+    teams: {
+      enabled: profile.teams.enabled,
+      webhooks: (profile.teams.webhooks ?? []).map((w) => ({
+        id: redactWebhookForDisplay(w.id),
+        tags: w.tags ?? [],
+      })),
+    },
   });
+}
+
+function redactWebhookForDisplay(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname.split("/").slice(0, 4).join("/")}/…`;
+  } catch {
+    return url.slice(0, 32) + "…";
+  }
 }
 
 export async function handleTestChannel(
@@ -174,11 +252,27 @@ export async function handleTestChannel(
 
   const router = new DeliveryRouter({ profile, profileName: name });
   try {
-    if (channel === "telegram") {
-      const result = await router.telegramService.testConnection();
-      return successResult({ profile: name, channel, ...result });
+    let result;
+    switch (channel) {
+      case "telegram":
+        result = await router.telegramService.testConnection();
+        break;
+      case "whatsapp":
+        result = await router.whatsappService.testConnection();
+        break;
+      case "slack":
+        result = await router.slackService.testConnection();
+        break;
+      case "discord":
+        result = await router.discordService.testConnection();
+        break;
+      case "email":
+        result = await router.emailService.testConnection();
+        break;
+      case "teams":
+        result = await router.teamsService.testConnection();
+        break;
     }
-    const result = await router.whatsappService.testConnection();
     return successResult({ profile: name, channel, ...result });
   } finally {
     await router.shutdown();
@@ -223,6 +317,7 @@ export async function handleSendNotification(
   try {
     const results = await router.sendNotification(parsed.data.message, {
       channels: parsed.data.channels as ChannelName[] | undefined,
+      tags: parsed.data.tags,
     });
     return successResult({
       profile: name,

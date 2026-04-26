@@ -29,19 +29,46 @@ function bootstrapFromEnv(): ParsedRootConfig {
 
   const telegramEnabled = Boolean(process.env.TELEGRAM_BOT_TOKEN);
   const whatsappEnabled = process.env.WHATSAPP_ENABLED !== "false";
+  const slackEnabled = Boolean(process.env.SLACK_BOT_TOKEN);
+  const discordEnabled = Boolean(process.env.DISCORD_WEBHOOK_URL);
+  const emailEnabled = Boolean(process.env.SMTP_HOST);
+  const teamsEnabled = Boolean(process.env.TEAMS_WEBHOOK_URL);
 
   const chatIds = envToList(process.env.TELEGRAM_CHAT_ID);
   const recipients = envToRecipients(process.env.WHATSAPP_RECIPIENTS);
   const watchDirs = envToList(process.env.WATCH_DIRECTORY);
   const exts = envToList(process.env.WATCH_EXTENSIONS);
+  const slackChannels = envToList(process.env.SLACK_CHANNELS)?.map((id) => ({ id }));
+  const discordWebhooks = envToList(process.env.DISCORD_WEBHOOK_URL)?.map((id) => ({ id }));
+  const teamsWebhooks = envToList(process.env.TEAMS_WEBHOOK_URL)?.map((id) => ({ id }));
+  const emailRecipients = envToList(process.env.EMAIL_RECIPIENTS)?.map((id) => ({ id }));
 
   return RootConfigSchema.parse({
     defaultProfile: profileName,
     profiles: {
       [profileName]: {
         defaultChannel:
-          (process.env.DEFAULT_CHANNEL as "telegram" | "whatsapp" | undefined) ??
-          (telegramEnabled ? "telegram" : "whatsapp"),
+          (process.env.DEFAULT_CHANNEL as
+            | "telegram"
+            | "whatsapp"
+            | "slack"
+            | "discord"
+            | "email"
+            | "teams"
+            | undefined) ??
+          (telegramEnabled
+            ? "telegram"
+            : whatsappEnabled
+              ? "whatsapp"
+              : slackEnabled
+                ? "slack"
+                : discordEnabled
+                  ? "discord"
+                  : emailEnabled
+                    ? "email"
+                    : teamsEnabled
+                      ? "teams"
+                      : "telegram"),
         telegram: {
           enabled: telegramEnabled,
           botToken: process.env.TELEGRAM_BOT_TOKEN,
@@ -53,9 +80,36 @@ function bootstrapFromEnv(): ParsedRootConfig {
             process.env.WHATSAPP_SESSION_PATH ?? `./.wwebjs_auth/${profileName}`,
           recipients,
         },
+        slack: {
+          enabled: slackEnabled,
+          botToken: process.env.SLACK_BOT_TOKEN,
+          channels: slackChannels,
+        },
+        discord: {
+          enabled: discordEnabled,
+          webhooks: discordWebhooks,
+        },
+        email: {
+          enabled: emailEnabled,
+          smtp: process.env.SMTP_HOST
+            ? {
+                host: process.env.SMTP_HOST,
+                port: Number(process.env.SMTP_PORT ?? 587),
+                secure: process.env.SMTP_SECURE === "true",
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+              }
+            : undefined,
+          from: process.env.EMAIL_FROM,
+          recipients: emailRecipients,
+        },
+        teams: {
+          enabled: teamsEnabled,
+          webhooks: teamsWebhooks,
+        },
         watcher: {
           directories: watchDirs ?? ["./builds"],
-          extensions: exts ?? [".apk", ".aab"],
+          extensions: exts ?? [".apk", ".aab", ".ipa"],
           stabilityThresholdMs: Number(process.env.WATCH_STABILITY_MS ?? 2000),
         },
         naming: {
@@ -66,6 +120,9 @@ function bootstrapFromEnv(): ParsedRootConfig {
         limits: {
           maxFileSizeMB: Number(process.env.MAX_FILE_SIZE_MB ?? 50),
           whatsappMaxMB: Number(process.env.WHATSAPP_MAX_MB ?? 2048),
+          slackMaxMB: Number(process.env.SLACK_MAX_MB ?? 1024),
+          discordMaxMB: Number(process.env.DISCORD_MAX_MB ?? 25),
+          emailMaxMB: Number(process.env.EMAIL_MAX_MB ?? 25),
         },
       },
     },
@@ -77,6 +134,10 @@ function toPublicProfile(p: ParsedProfileConfig): ProfileConfig {
     defaultChannel: p.defaultChannel,
     telegram: p.telegram,
     whatsapp: p.whatsapp,
+    slack: p.slack,
+    discord: p.discord,
+    email: p.email,
+    teams: p.teams,
     watcher: p.watcher,
     naming: p.naming,
     limits: p.limits,
@@ -151,6 +212,10 @@ export class ConfigStore {
       ...patch,
       telegram: { ...(current?.telegram ?? {}), ...(patch.telegram ?? {}) },
       whatsapp: { ...(current?.whatsapp ?? {}), ...(patch.whatsapp ?? {}) },
+      slack: { ...(current?.slack ?? {}), ...(patch.slack ?? {}) },
+      discord: { ...(current?.discord ?? {}), ...(patch.discord ?? {}) },
+      email: { ...(current?.email ?? {}), ...(patch.email ?? {}) },
+      teams: { ...(current?.teams ?? {}), ...(patch.teams ?? {}) },
       watcher: { ...(current?.watcher ?? {}), ...(patch.watcher ?? {}) },
       naming: { ...(current?.naming ?? {}), ...(patch.naming ?? {}) },
       limits: { ...(current?.limits ?? {}), ...(patch.limits ?? {}) },

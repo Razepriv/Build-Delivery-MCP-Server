@@ -1,7 +1,13 @@
 import { Telegraf } from "telegraf";
 import fs from "fs-extra";
-import type { BuildMetadata, DeliveryResult, TelegramConfig } from "../types.js";
+import type {
+  BuildMetadata,
+  DeliveryResult,
+  RecipientTag,
+  TelegramConfig,
+} from "../types.js";
 import { telegramCaption } from "./captions.js";
+import { filterByTags, tagTelegramChats } from "./tags.js";
 import { logger } from "../utils/logger.js";
 import { bytesToMB } from "../utils/fs.js";
 
@@ -42,22 +48,30 @@ export class TelegramService {
     }
   }
 
+  private taggedChats(tags?: readonly RecipientTag[]): { id: string }[] {
+    const all = tagTelegramChats(this.config.chatIds ?? [], this.config.chatTags);
+    return filterByTags(all, tags);
+  }
+
   async sendDocument(
     filePath: string,
     meta: BuildMetadata,
     customMessage?: string,
+    tags?: readonly RecipientTag[],
   ): Promise<DeliveryResult[]> {
     if (!this.isReady()) {
       throw new Error("Telegram service is not ready (missing token or chat IDs).");
     }
 
+    const targets = this.taggedChats(tags);
+
     const sizeMB = bytesToMB(meta.fileSize);
     if (sizeMB > TELEGRAM_BOT_MAX_MB) {
-      const msg = `File is ${sizeMB} MB; exceeds Telegram bot cap of ${TELEGRAM_BOT_MAX_MB} MB. Skipping Telegram delivery (WhatsApp route still active).`;
+      const msg = `File is ${sizeMB} MB; exceeds Telegram bot cap of ${TELEGRAM_BOT_MAX_MB} MB. Skipping Telegram delivery (other channels still active).`;
       logger.warn(msg);
-      return (this.config.chatIds ?? []).map((chatId) => ({
+      return targets.map((t) => ({
         channel: "telegram" as const,
-        recipient: chatId,
+        recipient: t.id,
         success: false,
         error: msg,
         durationMs: 0,
@@ -67,7 +81,7 @@ export class TelegramService {
     const caption = telegramCaption(meta, customMessage);
     const results: DeliveryResult[] = [];
 
-    for (const chatId of this.config.chatIds ?? []) {
+    for (const { id: chatId } of targets) {
       const start = Date.now();
       try {
         const buffer = await fs.readFile(filePath);
@@ -96,12 +110,16 @@ export class TelegramService {
     return results;
   }
 
-  async sendMessage(message: string): Promise<DeliveryResult[]> {
+  async sendMessage(
+    message: string,
+    tags?: readonly RecipientTag[],
+  ): Promise<DeliveryResult[]> {
     if (!this.isReady()) {
       throw new Error("Telegram service is not ready.");
     }
+    const targets = this.taggedChats(tags);
     const results: DeliveryResult[] = [];
-    for (const chatId of this.config.chatIds ?? []) {
+    for (const { id: chatId } of targets) {
       const start = Date.now();
       try {
         const msg = await this.client().telegram.sendMessage(chatId, message, { parse_mode: "HTML" });
