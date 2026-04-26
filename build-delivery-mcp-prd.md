@@ -304,11 +304,18 @@ For a single agency or team:
 
 ## 14. Roadmap
 
-**Phase 1 — MVP (this PRD)**
-Telegram + WhatsApp QR delivery, file watcher, APK/AAB parsing, template renaming, persistent config, 9 MCP tools.
+**Phase 1 — MVP (this PRD)** ✅ *Shipped.*
+Telegram + WhatsApp QR delivery, file watcher, APK/AAB parsing, template renaming, persistent multi-profile config, 9 MCP tools.
 
-**Phase 2 — Channel expansion**
-Slack, Discord, email (SMTP), Microsoft Teams. iOS IPA parsing. Multi-recipient per channel with tagging.
+**Phase 2 — Channel expansion** ✅ *Shipped.*
+- Slack via Web API (`@slack/web-api`, `filesUploadV2`, multi-channel routing).
+- Discord via webhooks (multipart file upload, native `fetch`).
+- Email via SMTP (`nodemailer`, plain-text + HTML body, attachment).
+- Microsoft Teams via Adaptive Card webhooks (notifications-only — Teams webhooks cannot accept file attachments; route the artifact through any other channel and let Teams carry the announcement).
+- iOS `.ipa` parsing via `Info.plist` (both XML and binary plists supported through `bplist-parser` + `adm-zip`); falls back to filename heuristics on broken archives.
+- Multi-recipient tagging across **all** channels (`tags: ["qa-team","internal"]`); `send_build` and `send_notification` accept a `tags` filter to scope delivery. Filter is OR-across-tags; untagged recipients are excluded once a filter is set, preventing accidental broadcasts.
+- Per-channel size caps: Slack 1024 MB, Discord 25 MB, Email 25 MB (all configurable).
+- Default watch extensions extended to `[".apk", ".aab", ".ipa"]`.
 
 **Phase 3 — Distribution intelligence**
 Build-to-build changelog generation from git log between tags. Crash-report correlation (pull Firebase Crashlytics per version). Tester install tracking via unique links.
