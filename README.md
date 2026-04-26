@@ -8,6 +8,7 @@ Build Delivery MCP is a Model Context Protocol (MCP) server that automates the "
 - **Three build formats:** Android `.apk` (via `aapt2`/`aapt`), Android `.aab` (via `bundletool`), iOS `.ipa` (Info.plist parsing — XML & binary)
 - **Recipient tagging:** label recipients (`qa-team`, `design-leads`, `ceo`) and scope deliveries with a `tags` filter — broadcast to everyone, or just the people who need this build
 - **Distribution intelligence:** auto-generated changelog from git tags, previous-version stability stats (Crashlytics or any source), and install tracking with unique per-recipient links served from a local HTTP endpoint
+- **One-command auto-install:** detects Claude Desktop, Claude Code, Cursor, Windsurf, Continue, Codex CLI, and Antigravity — registers the MCP server with each, writes "auto-deliver every build" instructions into their rules files, and drops a Gradle init script so even non-agent builds pipe through automatically
 - **Multi-project profiles:** one installation, many clients, isolated credentials
 - **Zero data loss:** originals are never mutated; everything is copy-to-staging → deliver → cleanup
 - **MCP-native:** works in Claude Desktop, Claude Code, Cursor; also runs as a standalone watcher
@@ -60,6 +61,15 @@ npm run build
 
 ```bash
 npm run setup
+```
+
+At the end of the wizard you'll be offered **auto-installation** — see [the next section](#auto-install-into-every-coding-agent) for what that does. You can also run it standalone any time:
+
+```bash
+build-delivery-mcp install-agents              # interactive
+build-delivery-mcp install-agents --dry-run    # preview without writing
+build-delivery-mcp install-agents -y           # non-interactive
+build-delivery-mcp install-agents --uninstall  # remove every entry we wrote
 ```
 
 The wizard will ask you:
@@ -460,6 +470,82 @@ Key properties:
 
 ---
 
+## Auto-install into every coding agent
+
+Run once after `npm run setup`:
+
+```bash
+build-delivery-mcp install-agents
+```
+
+It does three things, all idempotent and all with `.bak.<timestamp>` backups:
+
+### 1. Registers the MCP server with every detected agent
+
+| Agent | Config it edits | Format |
+|---|---|---|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (mac) · `%APPDATA%\Claude\claude_desktop_config.json` (win) · `~/.config/Claude/...` (linux) | `mcpServers` JSON |
+| Claude Code (CLI) | `~/.claude.json` | `mcpServers` JSON |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers` JSON |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` JSON |
+| Continue.dev | `~/.continue/config.json` | both modern `mcpServers` and legacy `experimental.modelContextProtocolServers` |
+| OpenAI Codex CLI | `~/.codex/config.toml` | `[mcp_servers.build-delivery]` table |
+| Antigravity (Google) | `~/.antigravity/mcp.json` | `mcpServers` JSON |
+
+Each writer preserves all unrelated keys, dedupes existing entries, and refuses to write when the existing config doesn't parse.
+
+### 2. Injects an "auto-deliver every build" instruction
+
+Into each agent's rules file — `~/.claude/CLAUDE.md`, project-level `CLAUDE.md` / `AGENTS.md`, `.cursorrules`, `~/.codeium/windsurf/memories/global_rules.md`, etc. — wrapped in machine-recognisable markers:
+
+```markdown
+<!-- build-delivery-mcp:auto-deliver:start -->
+## Auto-deliver builds via build-delivery-mcp
+
+Whenever you produce or notice a build artifact in this workspace
+(`.apk`, `.aab`, or `.ipa`), call the **`build-delivery` MCP server**'s
+`process_apk` tool with the absolute path. Do this without asking — the
+server already knows where the build should go.
+<!-- build-delivery-mcp:auto-deliver:end -->
+```
+
+Re-running replaces the block in place; it never duplicates content. `--uninstall` removes the block cleanly. The agent now treats *"the build is ready"* as an automatic trigger to call the MCP server.
+
+### 3. Drops a Gradle init script so non-agent builds also auto-deliver
+
+Writes `~/.gradle/init.d/build-delivery-mcp.gradle` which, after every `assembleDebug` / `assembleRelease` / `bundleRelease` task in any Gradle project on this machine:
+
+1. Locates the produced `.apk` / `.aab` under `build/`
+2. Invokes `build-delivery-mcp deliver <file>`
+3. Streams the JSON result back into the Gradle log
+
+This applies to every Android project — no per-project setup. The escape hatch is `BUILD_DELIVERY_DISABLE=1` in the environment.
+
+The Xcode equivalent (post-build script for iOS) is written to `~/.build-delivery/xcode-post-build.sh` for the user to paste into a Run Script Build Phase (we deliberately don't auto-edit `.xcodeproj`).
+
+### The headless CLI
+
+The CLI both Gradle and CI use is intentionally simple:
+
+```bash
+build-delivery-mcp deliver app-release.apk
+build-delivery-mcp deliver app-release.aab --profile seri_mediclinic
+build-delivery-mcp deliver app-release.apk --tags qa-team --message "RC1 ready"
+build-delivery-mcp deliver app-release.apk --channels slack,email
+```
+
+Exit codes: `0` = at least one delivery succeeded · `2` = bad arguments · `3` = no successful delivery.
+
+### Safety
+
+- **Backups before any write.** Every config and rules file gets `<path>.bak.<ISO-timestamp>` before being modified.
+- **Idempotent.** Re-running `install-agents` reports `unchanged` rows when no diff is needed.
+- **Dry-run mode.** `--dry-run` shows the would-be diff without touching disk.
+- **Per-agent opt-in.** `--only cursor,claude-code` restricts the install set; the wizard asks before doing anything.
+- **Clean uninstall.** `--uninstall` removes the `build-delivery` entry and the instruction block from every detected agent.
+
+---
+
 ## Distribution intelligence (Phase 3)
 
 Three opt-in capabilities that surface what changed and who installed it. All three are off by default — flip them on per profile via `set_intel_settings` or the wizard.
@@ -516,6 +602,7 @@ The server runs alongside the MCP stdio process. Operators expose it however the
 - **Phase 1 — MVP** ✅ *Shipped.* Telegram + WhatsApp delivery, file watcher, APK/AAB parsing, template renaming, persistent multi-profile config, 9 MCP tools.
 - **Phase 2 — Channel expansion** ✅ *Shipped.* Slack (Web API), Discord (webhooks), Email (SMTP), Microsoft Teams (Adaptive Card webhooks). iOS `.ipa` parsing via Info.plist (XML & binary). Multi-recipient tagging across all channels.
 - **Phase 3 — Distribution intelligence** ✅ *Shipped.* Changelog generation from git tags (conventional-commit grouping). Vendor-neutral Crashlytics correlation (file or HTTP source). Install tracking with a local HTTP server, per-recipient tokens, and a JSON-lines event log. 5 new MCP tools (14 total).
+- **Phase 3.5 — Auto-install** ✅ *Shipped.* One-command registration with Claude Desktop, Claude Code, Cursor, Windsurf, Continue, Codex CLI, and Antigravity. Idempotent merge with `.bak` backups. Auto-injected agent rules so every detected agent treats "build ready" as an automatic trigger. Gradle init script for non-agent flows. Headless `deliver` CLI for CI. v1.3.0.
 - **Phase 4 — Cloud & multi-tenant.** Cloud storage backing (S3/R2/GDrive) for builds >50MB. Public install links with expiry. Web dashboard. Multi-tenant SaaS.
 - **Phase 5 — Enterprise.** SSO, audit logs, RBAC, on-prem deployment, SOC 2 compliance.
 

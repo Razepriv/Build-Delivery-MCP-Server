@@ -318,15 +318,26 @@ Telegram + WhatsApp QR delivery, file watcher, APK/AAB parsing, template renamin
 - Default watch extensions extended to `[".apk", ".aab", ".ipa"]`.
 
 **Phase 3 — Distribution intelligence** ✅ *Shipped.*
-- **Changelog generation** from `git log` between the previous semver tag and `HEAD`. Commits are parsed for conventional-commit type/scope/breaking marker; output is grouped (Features → Fixes → Performance → Refactors → Other) and rendered into HTML for Telegram/Email and plain markdown for Slack/Discord/WhatsApp/Teams. Auto-discovers the previous tag via `git for-each-ref --sort=-creatordate refs/tags`. Configurable `includeTypes` and `maxCommits`.
+- **Changelog generation** from `git log` between the previous semver tag and `HEAD`. Commits are parsed for conventional-commit type/scope/breaking marker; output is grouped (Features → Fixes → Performance → Refactors → Other) and rendered into HTML for Telegram/Email and plain markdown for Slack/Discord/WhatsApp/Teams. Auto-discovers the previous tag via `git for-each-ref --sort=-version:refname refs/tags` (semver-aware, so `v1.10.0` correctly outranks `v1.9.0`). Configurable `includeTypes` and `maxCommits`.
 - **Crashlytics correlation** as a vendor-neutral integration. Reads a `CrashStats` JSON shape from either a local file or an HTTP endpoint (with optional `Authorization` header). Captions surface `crashFreeRate`, total crashes, affected users, and the top issue for the previous version. Operators wire BigQuery exports, the Crashlytics REST API, or any analytics pipeline that produces the shape.
 - **Install tracking** via a local HTTP server (Node built-in `http`, no new deps for the server itself). Tokens are 48-char hex with constant-time compare; per-recipient mode issues distinct tokens per `(channel, recipient)`. Routes: `/install/<token>` (serves file with `content-disposition: attachment`), `/install/<token>/info` (JSON metadata), `/healthz`. Events flow to `./.tracking/events.jsonl` (gitignored). `X-Forwarded-For` honored only with `INTEL_TRACKING_TRUST_PROXY=true`. The server auto-starts on boot when `intel.tracking.enabled=true`, and can be controlled at runtime via 5 new MCP tools (`set_intel_settings`, `start_install_server`, `stop_install_server`, `get_install_events`, `generate_changelog`) — bringing the total tool count to **14**.
 - **Per-recipient install URLs** flow through every channel: the `IntelOrchestrator` issues tokens lazily during caption assembly, the `intelForRecipient` helper composes a `(channel, recipientId)` URL, and each channel's caption builder embeds it. Slack switches from multi-channel batch upload to per-channel loop when per-recipient tracking is in play (so each channel sees its own URL); other channels already loop natively.
 - Captions extended end-to-end: Telegram/Email pick up HTML changelog + stability blocks, Slack/Discord/WhatsApp get plain-text equivalents, Teams Adaptive Cards gain a `Crash-free` fact + an `Action.OpenUrl` install button.
 - Bumped to **v1.2.0**.
 
-**Phase 3 — Distribution intelligence**
-Build-to-build changelog generation from git log between tags. Crash-report correlation (pull Firebase Crashlytics per version). Tester install tracking via unique links.
+**Phase 3.5 — Auto-install into every coding agent** ✅ *Shipped.*
+- One-command CLI: `build-delivery-mcp install-agents` (with `--dry-run`, `--yes`, `--only`, `--no-instructions`, `--no-build-hooks`, `--uninstall` flags). The wizard auto-runs it at the end of `npm run setup` after asking the operator.
+- Detects Claude Desktop, Claude Code (CLI), Cursor, Windsurf, Continue.dev, OpenAI Codex CLI, and Google Antigravity by checking each agent's known config-file or config-directory paths per OS.
+- Per-format writers:
+  - JSON-MCP shape (Claude Desktop/Code, Cursor, Windsurf, Antigravity): merges into `mcpServers` while preserving every unrelated key. Idempotent — re-runs report \`unchanged\` when no diff. Refuses to write when the existing file fails to parse.
+  - Codex TOML: splices a single `[mcp_servers.build-delivery]` table without disturbing other sections; quotes/backslashes correctly escaped.
+  - Continue.dev: writes both the modern `mcpServers` map and the legacy `experimental.modelContextProtocolServers` array, so users on either side of the schema switch keep working.
+- Auto-injected agent instructions: a marker-bracketed block (`<!-- build-delivery-mcp:auto-deliver:start/end -->`) appended to each agent's rules file (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `~/.codeium/windsurf/memories/global_rules.md`, etc.) telling the agent to call `process_apk` whenever it sees an APK/AAB/IPA — no asking, no extra prompting.
+- Gradle init script (`~/.gradle/init.d/build-delivery-mcp.gradle`) and Xcode post-build snippet (`~/.build-delivery/xcode-post-build.sh`) generated and dropped, so Android builds auto-pipe through the delivery CLI even when no agent is in the loop. `BUILD_DELIVERY_DISABLE=1` is the CI escape hatch.
+- New headless CLI: `build-delivery-mcp deliver <file>` runs the pipeline once, prints structured JSON, exit codes `0/2/3`. Used by Gradle/Xcode/CI hooks.
+- Unified main CLI: `build-delivery-mcp [serve|install-agents|deliver|setup]` with subcommand help.
+- Safety: `.bak.<ISO-timestamp>` backup before every write; clean `--uninstall` flow that removes both the MCP entry and the rules-file block.
+- Bumped to **v1.3.0**.
 
 **Phase 4 — Cloud & multi-tenant**
 Cloud storage backing (S3 / R2 / GDrive) for builds > 50MB. Public install links with expiry. Web dashboard. Multi-project support. This is where the SaaS play lives.
